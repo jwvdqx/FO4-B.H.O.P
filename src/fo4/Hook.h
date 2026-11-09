@@ -84,11 +84,7 @@ namespace
 		}
 		const bool onGround = rawGround || (!g_air.jumpedThisAir && g_air.airTime < 0.12f);
 
-		float waterDepth = 0.0f;
-		if (auto player = RE::PlayerCharacter::GetSingleton()) {
-			const float wh = a_this->waterHeight;
-			waterDepth = (wh > -1.0e6f && wh < 1.0e6f) ? wh - player->data.location.z : 0.0f;
-		}
+		const float waterDepth = g_waterDepth.load();  // game units, from the game's own water check (main thread)
 
 		g_stats.calls++;
 		g_stats.state = state;

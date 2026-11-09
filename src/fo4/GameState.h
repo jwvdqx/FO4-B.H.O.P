@@ -9,6 +9,7 @@ namespace
 	// =====================================================================
 	std::atomic<float>     g_load{ 0.0f };
 	std::atomic_bool       g_inPowerArmor{ false };
+	std::atomic<float>     g_waterDepth{ 0.0f };  // how deep you stand in water (game units), 0 = dry
 	std::atomic_bool       g_swimming{ false };
 	std::atomic_bool       g_sneaking{ false };
 	std::atomic_bool       g_cacheQueued{ false };
@@ -283,6 +284,11 @@ namespace
 		}
 		g_inPowerArmor = RE::PowerArmor::PlayerInPowerArmor();
 		g_swimming = player->ActorState::IsSwimming();
+		{
+			// the game's own water level where you stand (the character controller's copy is never filled in)
+			const float d = player->GetRelevantWaterHeight() - player->data.location.z;
+			g_waterDepth = std::isfinite(d) && d > 0.0f && d < 10000.0f ? d : 0.0f;
+		}
 		g_sneaking = player->IsSneaking();
 		if (auto avs = RE::ActorValue::GetSingleton()) {
 			auto owner = static_cast<RE::ActorValueOwner*>(player);

@@ -357,14 +357,7 @@ namespace
 
 		std::string SurfaceCategory(RE::bhkCharacterController* a_con, float& a_waterDepth)
 		{
-			a_waterDepth = 0.0f;
-			if (g_cfg.waterSounds) {
-				auto        player = RE::PlayerCharacter::GetSingleton();
-				const float wh = a_con->waterHeight;
-				if (player && wh > -1.0e6f && wh < 1.0e6f) {
-					a_waterDepth = wh - player->data.location.z;  // game units
-				}
-			}
+			a_waterDepth = g_cfg.waterSounds ? g_waterDepth.load() : 0.0f;  // game units
 			if (a_waterDepth > 1.0f && a_waterDepth < 200.0f) {
 				return a_waterDepth > 35.0f ? "wade" : "slosh";
 			}
