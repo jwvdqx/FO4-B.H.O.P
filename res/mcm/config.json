@@ -4,8 +4,8 @@
   "minMcmVersion": 2,
   "content": [
     {
-      "text": "<font size='24'>Boston Hopping Overhaul Project</font>",
-      "type": "text"
+      "text": "Boston Hopping Overhaul Project",
+      "type": "section"
     },
     {
       "text": "Half-Life 1 and 2 player movement, camera and sounds.",
