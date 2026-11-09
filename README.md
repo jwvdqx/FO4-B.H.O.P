@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.3.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.3.1)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -14,7 +14,8 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 - **Surfaces**: ice slides, mud/snow/sand drag, water slows you (Source-style surface friction).
 - **Weight**: carry weight and Power Armor slow your starts and turns.
 - Walls, NPCs and doors: the part of your speed going into them is removed and you slide along the rest
-  (Source's ClipVelocity, using the direction the game pushed you back). Slopes and steps are left alone.
+  (Source's ClipVelocity; the wall is found from the direction Havok slid you, so sliding along a wall
+  keeps your forward speed). Slopes and steps are left alone.
 - Pushes (hits, explosions, scripts) add to your momentum, Half-Life style. Scripted walks and anything
   moving you far faster than you can run are left to Fallout.
 - Short "airborne" moments on stairs count as ground.

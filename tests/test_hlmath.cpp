@@ -94,6 +94,22 @@ int main()
 		Near(v.y, 200.0, 1e-3, "clip keeps the sliding part");
 		v = ClipVelocity({ -100.0f, 50.0f }, { 1.0f, 0.0f });
 		Near(v.x, -100.0, 1e-3, "clip ignores walls you move away from");
+
+		// wall guess: sliding along a wall (normal +y) while Havok also shaved 10% off the sliding part
+		Vec2 n = WallNormal({ 300.0f, 100.0f }, { 270.0f, 0.0f });
+		Near(n.x, 0.0, 1e-4, "wall guess ignores Havok's forward loss (x)");
+		Near(n.y, 1.0, 1e-4, "wall guess ignores Havok's forward loss (y)");
+		v = ClipVelocity({ 300.0f, 100.0f }, n);
+		Near(v.x, 300.0, 1e-3, "wall slide keeps all forward speed");
+		// tiny jitter while already sliding: not a wall hit, no speed lost
+		n = WallNormal({ 400.0f, 0.0f }, { 392.0f, 5.0f });
+		Near(n.Length(), 0.0, 1e-6, "jitter is not a wall");
+		// head-on: the wall is straight ahead
+		n = WallNormal({ 400.0f, 0.0f }, { 0.0f, 0.0f });
+		Near(n.x, 1.0, 1e-4, "head-on wall faces you");
+		// glancing hit at about 30 degrees: normal is the sideways part
+		n = WallNormal({ 346.4f, 200.0f }, { 346.4f, 0.0f });
+		Near(n.y, 1.0, 1e-4, "glancing hit finds the wall");
 	}
 
 	// --- HL1 bunnyhop cap: max 320 -> limit 544; at 600 you drop to 544*0.65 = 353.6

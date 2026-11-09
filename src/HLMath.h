@@ -79,6 +79,30 @@ namespace hlmath
 		return a_vel - a_normal * backoff;
 	}
 
+	// Our guess of the wall's direction (pointing into it) from what we asked Havok for and what it gave.
+	// A wall only removes the part of your motion going into it, so Havok's result points ALONG the wall:
+	// the wall normal is the part of 'asked' that is sideways to Havok's result. This ignores any speed
+	// Havok lost in the direction you were already going, and small jitter, which the simple
+	// 'asked - actual' guess turned into a big tilted normal that ate your forward speed every step.
+	// Returns {0,0} when you kept your direction (within ~2 degrees): slopes, steps, Havok's own losses.
+	inline Vec2 WallNormal(Vec2 a_asked, Vec2 a_actual)
+	{
+		const float askedLen = a_asked.Length();
+		const float actLen = a_actual.Length();
+		if (askedLen < 1e-3f) {
+			return {};
+		}
+		if (actLen < 0.25f * askedLen || a_asked.Dot(a_actual) <= 0.0f) {
+			return (a_asked - a_actual).Normalized();  // (nearly) head-on, or bounced back: no slide direction to trust
+		}
+		const Vec2 along = a_actual * (1.0f / actLen);
+		const Vec2 side = a_asked - along * a_asked.Dot(along);
+		if (side.Length() < 0.035f * askedLen) {
+			return {};
+		}
+		return side.Normalized();
+	}
+
 	// PM_PreventMegaBunnyJumping (HL1): above 1.7x max speed you're cut to 0.65 of that.
 	// The original measures the FULL 3D velocity. It runs inside PM_Jump before the jump's upward speed
 	// is set, but on the landing frame (the frame a bunnyhop jumps on) the velocity still holds the

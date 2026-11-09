@@ -2399,14 +2399,12 @@ namespace
 						SetSimVel(SimVel() + delta);
 						g_stats.pushes++;
 					} else if (g_cfg.wallClip && askedLen > 10.0f && actLen <= askedLen + 5.0f) {
-						// a wall/NPC/door took part of the motion: the removed part points into the surface.
-						// Remove that same part from our velocity (Source's ClipVelocity) so you slide along it.
-						const hlmath::Vec2 normal = (asked - act).Normalized();
-						const float        along = std::fabs(normal.Dot(asked.Normalized()));
+						// a wall/NPC/door took part of the motion. Find the wall from the direction Havok slid
+						// you (WallNormal): small jitter in Havok's answer then can't eat your forward speed.
+						const hlmath::Vec2 normal = hlmath::WallNormal(asked, act);
 						const float        lost = 1.0f - actLen / askedLen;
-						// Straight-line losses under 50% are slopes and steps (Havok bends you along the ground),
-						// not walls: leave those alone so you don't slow down going uphill.
-						if (!(along > 0.95f && lost < 0.5f)) {
+						// zero normal = you kept your direction (slope, step, Havok's own loss): not a wall
+						if (normal.Length() > 0.5f) {
 							const hlmath::Vec2 before = SimVel();
 							SetSimVel(hlmath::ClipVelocity(before, normal));
 							g_stats.clips++;
@@ -2417,7 +2415,7 @@ namespace
 							}
 						} else if (g_cfg.debugLog && g_stats.detailLogs < 40) {
 							++g_stats.detailLogs;
-							REX::INFO("slope/step ignored: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) lost {:.0f}%", asked.x, asked.y, act.x, act.y, lost * 100.0f);
+							REX::INFO("no wall (direction kept): asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) lost {:.0f}%", asked.x, asked.y, act.x, act.y, lost * 100.0f);
 						}
 					}
 				}
