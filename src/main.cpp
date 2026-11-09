@@ -1654,6 +1654,8 @@ namespace
 		float         wishSpeed{ 0.0f };
 		float         outSpeed{ 0.0f };
 		float         actualSpeed{ 0.0f };
+		float         reportedSpeed{ 0.0f };
+		bool          measured{ false };
 		int           state{ -1 };
 		std::uint32_t material{ 0 };
 		float         water{ 0.0f };
@@ -1738,8 +1740,8 @@ namespace
 			return;
 		}
 		g_stats.lastPrint = now;
-		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {}",
-			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed,
+		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {}",
+			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed, g_stats.reportedSpeed, g_stats.measured ? "" : ", not measured",
 			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load());
 		g_stats.calls = 0;
 		g_stats.groundCalls = 0;
@@ -2092,6 +2094,9 @@ namespace
 		float lastLandFall{ 0.0f };  // fall speed at the last landing (HL units/s)
 		float sinceLanding{ 10.0f };  // seconds since the last landing
 		hlmath::Vec2 lastOut{};  // what we told the game last step
+		RE::hkVector4f prevPos{};  // controller position at the last step (Havok units)
+		float          prevPosDt{ 0.0f };
+		bool           hasPrevPos{ false };
 		float jumpStartZ{ 0.0f }, jumpPeakZ{ 0.0f }, jumpTakeoffVz{ 0.0f }, jumpTime{ 0.0f };
 		bool  measuring{ false };
 		// crouch-jump
@@ -2214,8 +2219,31 @@ namespace
 		const int  state = static_cast<int>(a_this->context.m_currentState);
 		const bool rawGround = a_this->context.m_currentState == RE::hknpCharacterState::hknpCharacterStateType::kOnGround;
 
-		RE::hkVector4f actual;
-		a_this->GetLinearVelocityImpl(actual);
+		// What Havok reports as your velocity may just be the velocity we asked for (walls not taken into
+		// account), so measure what really happened: how far you moved since the last step.
+		RE::hkVector4f reported;
+		a_this->GetLinearVelocityImpl(reported);
+		RE::hkVector4f actual = reported;
+		{
+			RE::hkVector4f pos;
+			a_this->GetPositionImpl(pos, false);
+			bool measured = false;
+			if (g_air.hasPrevPos && g_air.prevPosDt > 0.0005f) {
+				const float mx = (pos.x - g_air.prevPos.x) / g_air.prevPosDt;
+				const float my = (pos.y - g_air.prevPos.y) / g_air.prevPosDt;
+				// anything faster than ~75 m/s is a teleport (doors, fast travel, scripts), not movement
+				if (std::isfinite(mx) && std::isfinite(my) && std::hypot(mx, my) / g_cfg.unitScale < 3000.0f) {
+					actual.x = mx;
+					actual.y = my;
+					measured = true;
+				}
+			}
+			g_air.prevPos = pos;
+			g_air.prevPosDt = dt;
+			g_air.hasPrevPos = true;
+			g_stats.measured = measured;
+			g_stats.reportedSpeed = std::hypot(reported.x, reported.y) / g_cfg.unitScale;
+		}
 
 		auto       ui = RE::UI::GetSingleton();
 		const bool menus = ui && ui->menuMode != 0;
@@ -2390,7 +2418,7 @@ namespace
 				const float        askedLen = asked.Length();
 				const float        actLen = act.Length();
 				if (delta.Length() > 5.0f) {
-					if (g_cfg.pushes && actLen > askedLen + g_cfg.pushThreshold) {
+					if (g_cfg.pushes && actLen > askedLen * 1.15f + g_cfg.pushThreshold) {  // 15%: step-timing slack
 						// something pushed you (hit, explosion, script): keep it as momentum, Half-Life style
 						if (g_cfg.debugLog && g_stats.detailLogs < 40) {
 							++g_stats.detailLogs;
@@ -2398,7 +2426,7 @@ namespace
 						}
 						SetSimVel(SimVel() + delta);
 						g_stats.pushes++;
-					} else if (g_cfg.wallClip && askedLen > 10.0f && actLen <= askedLen + 5.0f) {
+					} else if (g_cfg.wallClip && askedLen > 10.0f && actLen <= askedLen * 1.15f + 5.0f) {
 						// a wall/NPC/door took part of the motion. Find the wall from the direction Havok slid
 						// you (WallNormal): small jitter in Havok's answer then can't eat your forward speed.
 						const hlmath::Vec2 normal = hlmath::WallNormal(asked, act);
@@ -2410,8 +2438,9 @@ namespace
 							g_stats.clips++;
 							if (g_cfg.debugLog && g_stats.detailLogs < 40) {
 								++g_stats.detailLogs;
-								REX::INFO("clip: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) normal ({:.2f},{:.2f}) sim ({:.0f},{:.0f}) -> ({:.0f},{:.0f})",
-									asked.x, asked.y, act.x, act.y, normal.x, normal.y, before.x, before.y, g_sim.vx, g_sim.vy);
+								REX::INFO("clip: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) havok says ({:.0f},{:.0f}) normal ({:.2f},{:.2f}) sim ({:.0f},{:.0f}) -> ({:.0f},{:.0f})",
+									asked.x, asked.y, act.x, act.y, reported.x / g_cfg.unitScale, reported.y / g_cfg.unitScale,
+									normal.x, normal.y, before.x, before.y, g_sim.vx, g_sim.vy);
 							}
 						} else if (g_cfg.debugLog && g_stats.detailLogs < 40) {
 							++g_stats.detailLogs;

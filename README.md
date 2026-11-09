@@ -14,7 +14,7 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 - **Surfaces**: ice slides, mud/snow/sand drag, water slows you (Source-style surface friction).
 - **Weight**: carry weight and Power Armor slow your starts and turns.
 - Walls, NPCs and doors: the part of your speed going into them is removed and you slide along the rest
-  (Source's ClipVelocity; the wall is found from the direction Havok slid you, so sliding along a wall
+  (Source's ClipVelocity; the mod measures how far you really moved and finds the wall from the direction you slid, so sliding along a wall
   keeps your forward speed). Slopes and steps are left alone.
 - Pushes (hits, explosions, scripts) add to your momentum, Half-Life style. Scripted walks and anything
   moving you far faster than you can run are left to Fallout.
