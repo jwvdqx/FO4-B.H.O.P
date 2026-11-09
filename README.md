@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.2.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.3.0)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -97,9 +97,18 @@ chain with other plugins that changed the same functions. Problems are written t
 bunnyhop cap, HL2 jump boost, step sounds, landing punch), checked against Valve's published code.
 `tests/test_hlmath.cpp` tests it on every build.
 
+## Threads
+
+- Movement runs on a physics thread; settings are only replaced on the main thread while holding the same
+  lock the movement code uses, so movement always sees a complete set of settings.
+- Camera effects, sounds, footstep muting, the jump/sneak key hooks and settings reloads are expected to run on the
+  main thread. The debug log prints a "thread check" line for each so this can be confirmed in-game.
+- Perk records are only touched on the main thread; movement reads published rank counts.
+
 ## Build
 
-Every push is built by GitHub Actions. Publishing a release attaches the mod zip automatically.
+Every push is built by GitHub Actions (with the math tests). Publishing a release on GitHub builds once more
+and attaches `BHOP-<version>.zip`.
 
 ## Logs
 

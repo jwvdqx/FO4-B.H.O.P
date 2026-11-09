@@ -101,7 +101,7 @@
           "id": "iSmoothing:General",
           "text": "Smoothness",
           "type": "dropdown",
-          "help": "Every frame: smoothest, no delay (recommended). Exact tick: Half-Life's tick rate (ground movement only), can feel steppy at 40-60 fps. Exact tick + smoothing: smooth, up to one tick of delay.",
+          "help": "Every frame: smoothest, no delay (recommended). Exact tick: Half-Life's tick rate for ground and air, can feel steppy at 40-60 fps. Exact tick + smoothing: smooth, up to one tick of delay.",
           "valueOptions": {
             "options": [
               "Exact tick",
@@ -477,6 +477,20 @@
           "help": "Half-Life 2 mode: keep the jump boost's famous backwards quirk.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iHL2AirFriction:Air",
+          "text": "HL2 rising air control",
+          "type": "dropdown",
+          "help": "Half-Life 2: while you rise slowly (under 140 units/s), air acceleration is quartered, as in Source. Scaled: the 140 is scaled to Fallout's own jump speed.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "Exact",
+              "Scaled to Fallout's jump"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {

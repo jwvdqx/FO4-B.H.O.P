@@ -157,6 +157,13 @@ namespace hlmath
 		return a_fallSpeed >= threshold ? a_fallSpeed * 0.013f : 0.0f;
 	}
 
+	// CGameMovement::CategorizePosition (HL2): rising slower than the threshold (140) sets surface
+	// friction to 0.25, which scales air acceleration; rising faster or falling keeps 1.0.
+	inline float HL2AirSurface(float a_verticalSpeed, float a_threshold)
+	{
+		return (a_verticalSpeed > 0.0f && a_verticalSpeed <= a_threshold) ? 0.25f : 1.0f;
+	}
+
 	// Crouch-jump lift: the upward speed (m/s) that adds a_lift metres of height from the current point,
 	// keeping any upward speed you already have.
 	inline float CrouchLiftSpeed(float a_upSpeed, float a_gravity, float a_lift)

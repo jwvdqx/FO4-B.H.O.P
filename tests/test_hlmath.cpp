@@ -154,6 +154,16 @@ int main()
 		Near(DecayPunch(0.5f, 1.0f), 0.0, 1e-6, "punch decays to zero");
 	}
 
+	// --- HL2 rising air friction
+	{
+		Near(HL2AirSurface(160.0f, 140.0f), 1.0, 1e-6, "HL2: rising fast keeps full air control");
+		Near(HL2AirSurface(100.0f, 140.0f), 0.25, 1e-6, "HL2: rising slowly quarters air control");
+		Near(HL2AirSurface(140.0f, 140.0f), 0.25, 1e-6, "HL2: exactly 140 counts as slow");
+		Near(HL2AirSurface(-50.0f, 140.0f), 1.0, 1e-6, "HL2: falling keeps full air control");
+		const Vec2 slow = AirAccelerate({ 300.0f, 0.0f }, { 0.0f, 1.0f }, 100.0f, 10.0f, 30.0f, 0.25f, dt);
+		Near(slow.y, 3.75, 1e-3, "HL2: quartered air acceleration (10*100*0.015*0.25)");
+	}
+
 	// --- crouch-jump lift
 	{
 		// from the top of the jump, +18 HL units (0.4572 m) at Fallout gravity 13.24: sqrt(2*13.24*0.4572)

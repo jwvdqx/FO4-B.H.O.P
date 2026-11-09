@@ -93,6 +93,7 @@ namespace
 		bool  hl1BhopCap{ true };
 		bool  hl2JumpBoost{ true };
 		bool  hl2ABH{ true };
+		int   hl2AirFriction{ 2 };     // HL2 rising air friction: 0 off, 1 exact (140 u/s), 2 scaled to Fallout's jump
 
 		// ---- surfaces
 		bool  surfaceFriction{ true };
@@ -254,6 +255,9 @@ namespace
 					B("bHL1BhopCap", g_cfg.hl1BhopCap);
 					B("bHL2JumpBoost", g_cfg.hl2JumpBoost);
 					B("bHL2ABH", g_cfg.hl2ABH);
+					if (key == "iHL2AirFriction") {
+						g_cfg.hl2AirFriction = std::clamp(std::stoi(val), 0, 2);
+					}
 					{
 						static constexpr const char* kPerkKeys[6] = { "sPerkMovingTarget", "sPerkStrongBack", "sPerkAdamantiumSkeleton", "sPerkAquaboy", "sPerkSneak", "sPerkActionBoy" };
 						for (int i = 0; i < 6; ++i) {
@@ -691,10 +695,23 @@ namespace
 		constexpr int             kCount = 6;
 		std::vector<RE::BGSPerk*> g_list[kCount];  // moving target, strong back, adamantium skeleton, aquaboy/girl, sneak, action boy/girl
 		std::atomic<int>          g_rank[kCount]{};
+		std::atomic<int>          g_count[kCount]{};  // how many ranks each perk has (published for the physics thread)
 		enum : int { kMovingTarget, kStrongBack, kAdamantium, kAquaboy, kSneak, kActionBoy };
 
+		std::string g_resolvedNames;  // the names g_list was built from (main thread only)
+
+		// Main thread only. g_list is only ever touched on the main thread; the physics thread reads
+		// the published rank counts (g_count / g_rank) instead.
 		void Resolve()
 		{
+			std::string names;
+			for (auto& n : g_cfg.perkNames) {
+				names += n + ";";
+			}
+			if (names == g_resolvedNames) {
+				return;  // nothing changed: don't rebuild every time the pause menu closes
+			}
+			g_resolvedNames = names;
 			for (auto& l : g_list) {
 				l.clear();
 			}
@@ -726,6 +743,9 @@ namespace
 					g_list[idx].push_back(perk);
 				}
 			}
+			for (int i = 0; i < kCount; ++i) {
+				g_count[i] = static_cast<int>(g_list[i].size());
+			}
 			REX::INFO("Perks found (ranks): Moving Target {}, Strong Back {}, Adamantium Skeleton {}, Aquaboy {}, Sneak {}, Action Boy {}",
 				g_list[0].size(), g_list[1].size(), g_list[2].size(), g_list[3].size(), g_list[4].size(), g_list[5].size());
 		}
@@ -744,7 +764,11 @@ namespace
 		}
 
 		int Rank(int a_idx) { return g_cfg.perkMode == 0 ? 0 : g_rank[a_idx].load(); }
-		bool MaxRank(int a_idx) { return !g_list[a_idx].empty() && Rank(a_idx) >= static_cast<int>(g_list[a_idx].size()); }
+		bool MaxRank(int a_idx)
+		{
+			const int count = g_count[a_idx].load();
+			return count > 0 && Rank(a_idx) >= count;
+		}
 		bool Bonus() { return g_cfg.perkMode != 0; }
 		bool Unlock() { return g_cfg.perkMode == 2; }
 	}
@@ -950,6 +974,10 @@ namespace
 		void HookedGetTranslation(const void* a_this, RE::NiPoint3& a_out)
 		{
 			g_origTrans(a_this, a_out);
+			if (static bool logged = false; !logged && g_cfg.debugLog) {
+				logged = true;
+				REX::INFO("thread check: camera on thread {}", REX::W32::GetCurrentThreadId());
+			}
 			if (!Active(a_this)) {
 				return;
 			}
@@ -1174,6 +1202,9 @@ namespace
 					}
 				}
 				REX::INFO("{}: {} sound groups found", kFolders[set], g_groups[set].size());
+				if (g_groups[set].find(set == 1 ? "pl_step" : "concrete") == g_groups[set].end()) {
+					REX::WARN("{}: basic footstep files are missing; vanilla footsteps will NOT be muted for this set", kFolders[set]);
+				}
 			}
 		}
 
@@ -1369,9 +1400,11 @@ namespace
 				return 4;  // pl_tile5, HL1 plays it now and then
 			}
 			auto it = g_groups[a_set].find(a_group);
-			if (it == g_groups[a_set].end() || it->second.files.size() != 4) {
+			const bool hl1Tile = a_set == 1 && a_group == "pl_tile";
+			if (it == g_groups[a_set].end() || (it->second.files.size() != 4 && !(hl1Tile && it->second.files.size() >= 4))) {
 				return -1;
 			}
+			// PM_PlayStepSound: (0|1) + left*2 -> files 1/3 on one foot, 2/4 on the other
 			return g_step.left ? (pick ? 2 : 0) : (pick ? 3 : 1);
 		}
 
@@ -1482,6 +1515,16 @@ namespace
 		int g_ptrHits[8]{};
 		int g_footstepLogs{ 0 };
 
+		// The Half-Life footsteps for this set are installed (otherwise we never mute the vanilla ones)
+		bool HasSounds(int a_set)
+		{
+			if (a_set < 1 || a_set > 2) {
+				return false;
+			}
+			const auto it = g_groups[a_set].find(a_set == 1 ? "pl_step" : "concrete");
+			return it != g_groups[a_set].end() && !it->second.files.empty();
+		}
+
 		bool IsPlayerFootstep(const void* a_event)
 		{
 			auto player = RE::PlayerCharacter::GetSingleton();
@@ -1529,7 +1572,7 @@ namespace
 						u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], g_playerHandle);
 				}
 			}
-			if (g_cfg.muteVanillaFootsteps && SoundSet() != 0 && g_ready && IsPlayerFootstep(a_event)) {
+			if (g_cfg.muteVanillaFootsteps && SoundSet() != 0 && g_ready && HasSounds(SoundSet()) && IsPlayerFootstep(a_event)) {
 				return 0;  // kContinue: other listeners still get the event, only the sound is skipped
 			}
 			return g_origFootstep(a_sink, a_event, a_source);
@@ -1607,6 +1650,7 @@ namespace
 		std::uint32_t groundCalls{ 0 };
 		std::uint32_t clips{ 0 };
 		std::uint32_t pushes{ 0 };
+		int           detailLogs{ 0 };
 		float         wishSpeed{ 0.0f };
 		float         outSpeed{ 0.0f };
 		float         actualSpeed{ 0.0f };
@@ -1873,7 +1917,7 @@ namespace
 	// ---------------------------------------------------------------------
 	// Half-Life air acceleration (PM_AirAccelerate) + optional stick assist
 	// ---------------------------------------------------------------------
-	void AirAccelerate(const Wish& a_wish, float a_dt, float a_accelMult)
+	void AirAccelerate(const Wish& a_wish, float a_dt, float a_accelMult, float a_surface = 1.0f)
 	{
 		if (a_wish.speed <= 0.0f) {
 			return;
@@ -1904,7 +1948,7 @@ namespace
 			}
 		}
 
-		SetSimVel(hlmath::AirAccelerate(SimVel(), { dirX, dirY }, a_wish.speed, accel, cap, 1.0f, a_dt));
+		SetSimVel(hlmath::AirAccelerate(SimVel(), { dirX, dirY }, a_wish.speed, accel, cap, a_surface, a_dt));
 	}
 
 	// ---------------------------------------------------------------------
@@ -2060,6 +2104,7 @@ namespace
 		float prevVz{ 0.0f };
 		bool  hasPrevVz{ false };
 		float jumpHeightHL{ 43.0f };   // Fallout's own jump height (HL units), learned from jumps
+		float takeoffHL{ 135.0f };     // Fallout's own jump takeoff speed (HL units/s), learned from jumps
 		bool  hasLastOut{ false };
 		float grace{ 0.0f };
 		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
@@ -2138,13 +2183,19 @@ namespace
 
 	void HookedSetLinearVelocity(RE::bhkCharacterController* a_this, const RE::hkVector4f& a_vel)
 	{
-		if (!a_this || a_this != PlayerController() || (g_cfg.mode == Mode::kVanilla && SoundSet() == 0)) {
+		if (!a_this || a_this != PlayerController()) {
+			return g_origSetVel(a_this, a_vel);
+		}
+
+		// Thread model: this runs on a physics thread. Settings are only ever replaced on the main thread
+		// while holding g_simLock, so every setting read here happens under that same lock.
+		std::unique_lock lock(g_simLock);
+		if (g_cfg.mode == Mode::kVanilla && SoundSet() == 0) {
+			lock.unlock();
 			return g_origSetVel(a_this, a_vel);
 		}
 
 		RequestCacheUpdate();
-
-		std::scoped_lock lock(g_simLock);
 
 		const auto now = std::chrono::steady_clock::now();
 		float      dt = 0.0f;
@@ -2206,6 +2257,7 @@ namespace
 			static bool logged = false;
 			if (g_cfg.debugLog && !logged) {
 				logged = true;
+				REX::INFO("thread check: movement on thread {}", REX::W32::GetCurrentThreadId());
 				REX::INFO("physics: gravity {:.3f} height {:.3f} radius {:.3f} scale {:.3f} actorHeight {:.3f} shapeType {}",
 					a_this->gravity, a_this->height, a_this->radius, a_this->scale, a_this->actorHeight,
 					static_cast<int>(a_this->shapeType.underlying()));
@@ -2228,6 +2280,10 @@ namespace
 				if (!g_air.crouchJumped && rise > 10.0f && rise < 200.0f) {
 					const float hl = rise * (0.0254f * 69.99124f);
 					g_air.jumpHeightHL += (hl - g_air.jumpHeightHL) * 0.3f;
+					const float takeoff = g_air.jumpTakeoffVz / g_cfg.unitScale;
+					if (takeoff > 30.0f && takeoff < 600.0f) {
+						g_air.takeoffHL += (takeoff - g_air.takeoffHL) * 0.3f;
+					}
 				}
 				if (g_cfg.debugLog) {
 					REX::INFO("jump: takeoff {:.2f} m/s ({:.0f} HL u/s), peak +{:.1f} game units ({:.1f} HL units), air time {:.2f} s, gravity {:.2f} m/s2{}",
@@ -2336,6 +2392,10 @@ namespace
 				if (delta.Length() > 5.0f) {
 					if (g_cfg.pushes && actLen > askedLen + g_cfg.pushThreshold) {
 						// something pushed you (hit, explosion, script): keep it as momentum, Half-Life style
+						if (g_cfg.debugLog && g_stats.detailLogs < 40) {
+							++g_stats.detailLogs;
+							REX::INFO("push: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) added ({:.0f},{:.0f})", asked.x, asked.y, act.x, act.y, delta.x, delta.y);
+						}
 						SetSimVel(SimVel() + delta);
 						g_stats.pushes++;
 					} else if (g_cfg.wallClip && askedLen > 10.0f && actLen <= askedLen + 5.0f) {
@@ -2347,8 +2407,17 @@ namespace
 						// Straight-line losses under 50% are slopes and steps (Havok bends you along the ground),
 						// not walls: leave those alone so you don't slow down going uphill.
 						if (!(along > 0.95f && lost < 0.5f)) {
-							SetSimVel(hlmath::ClipVelocity(SimVel(), normal));
+							const hlmath::Vec2 before = SimVel();
+							SetSimVel(hlmath::ClipVelocity(before, normal));
 							g_stats.clips++;
+							if (g_cfg.debugLog && g_stats.detailLogs < 40) {
+								++g_stats.detailLogs;
+								REX::INFO("clip: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) normal ({:.2f},{:.2f}) sim ({:.0f},{:.0f}) -> ({:.0f},{:.0f})",
+									asked.x, asked.y, act.x, act.y, normal.x, normal.y, before.x, before.y, g_sim.vx, g_sim.vy);
+							}
+						} else if (g_cfg.debugLog && g_stats.detailLogs < 40) {
+							++g_stats.detailLogs;
+							REX::INFO("slope/step ignored: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) lost {:.0f}%", asked.x, asked.y, act.x, act.y, lost * 100.0f);
 						}
 					}
 				}
@@ -2403,7 +2472,16 @@ namespace
 			if (Perks::Bonus()) {
 				airMult *= std::clamp(1.0f + (g_agility.load() - 5.0f) * 0.04f, 0.8f, 1.25f);  // Agility
 			}
-			outV = run([&](float a_t) { AirAccelerate(wish, a_t, airMult); });
+			// HL2 (CGameMovement::CategorizePosition): while you rise slower than 140 units/s, the player's
+			// surface friction is 0.25, which also scales air acceleration. Rising fast (start of a jump) or
+			// falling: 1.0. HL1 keeps 1.0 in the air.
+			float airSurface = 1.0f;
+			if (g_cfg.mode == Mode::kHL2 && g_cfg.hl2AirFriction != 0) {
+				const float vzHL = actual.z / g_cfg.unitScale;
+				const float threshold = g_cfg.hl2AirFriction == 1 ? 140.0f : 140.0f * (g_air.takeoffHL / 160.0f);  // 160 = HL2 jump speed
+				airSurface = hlmath::HL2AirSurface(vzHL, threshold);
+			}
+			outV = run([&](float a_t) { AirAccelerate(wish, a_t, airMult, airSurface); });
 		} else {
 			// ---- on the ground
 			g_air.airborneSim = false;
@@ -2519,6 +2597,10 @@ namespace
 	// MCM lives in the pause menu: when it closes, read the settings again so changes apply right away.
 	void ReloadSettings()
 	{
+		if (static bool logged = false; !logged && g_cfg.debugLog) {
+			logged = true;
+			REX::INFO("thread check: settings reload on thread {}", REX::W32::GetCurrentThreadId());
+		}
 		{
 			std::scoped_lock lock(g_simLock);  // the physics thread reads these while you move
 			LoadConfig();
