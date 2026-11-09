@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.0.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.0.1)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -46,10 +46,47 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   as loose files.
 - Updating from an older version: delete `Data\MCM\Settings\BHOP.ini` once so new defaults apply.
 
+## Sound files
+
+Loose `.wav` (or `.xwm`) files, 16-bit mono recommended, named `<group><number>.wav`:
+
+| Folder | Groups (file names) |
+|---|---|
+| `Data\Sound\FX\BHOP\HL1\` | `pl_step1-4` (concrete), `pl_metal1-4`, `pl_dirt1-4`, `pl_duct1-4`, `pl_grate1-4`, `pl_tile1-5`, `pl_slosh1-4`, `pl_wade1-4`, `pl_ladder1-4`, `pl_swim1-4`, `pl_fallpain1`/`pl_fallpain3` |
+| `Data\Sound\FX\BHOP\HL2\` | `concrete1-4`, `metal1-4`, `metalgrate1-4`, `chainlink1-4`, `duct1-4`, `wood1-4`, `woodpanel1-4`, `grass1-4`, `gravel1-4`, `mud1-4`, `sand1-4`, `dirt1-4`, `tile1-4`, `slosh1-4`, `wade1-4`, `ladder1-4`, `hardboot_generic1-9` (Power Armor), `softshoe_generic1-8` (carpet) |
+
+Groups with exactly 4 files use Half-Life's left/right pattern (1/3 left, 2/4 right); others play a random
+file. A missing group falls back to concrete (`concrete` / `pl_step`). The log lists which surface uses
+which group.
+
+## How the native hooks work (version-specific)
+
+Built for runtime 1.11.240. All hooks are checked when installed (type and target), installed once, and
+chain with other plugins that changed the same functions. Problems are written to the log.
+
+- **Movement**: the player's character controller `SetLinearVelocityImpl` (virtual 0x3A). Only the player.
+- **Camera**: the first person camera state's rotation/position (virtuals 0x0C/0x0D).
+- **Muting vanilla player footsteps**: `BGSImpactManager`'s footstep listener, found through the game's
+  type information. Player footstep events are recognised by finding the player inside the event (the first
+  match is accepted). If the listener can't be found, the log says so and vanilla footsteps keep playing
+  (double footsteps).
+
+## Known limits
+
+- Collisions are handled by checking how much speed the game removed, not the wall's direction yet.
+- Knockback, explosions and scripted pushes on the player's horizontal movement aren't separated from your own
+  movement yet.
+- Perks are found by name (English by default; change the names in the settings file for other languages).
+- No speedometer or crouch-jump yet.
+
 ## Build
 
 Every push is built by GitHub Actions. Publishing a release attaches the mod zip automatically.
 
 ## Logs
 
-`Documents\My Games\Fallout4\F4SE\BHOP.log` (MCM -> Debug -> Debug log).
+`Documents\My Games\Fallout4\F4SE\BHOP.log`. Detailed logging is off by default: MCM -> Debug -> Debug log.
+
+## License
+
+GPL-3.0, see `LICENSE`.

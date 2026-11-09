@@ -38,7 +38,7 @@ namespace
 	struct Config
 	{
 		Mode mode{ Mode::kHL2 };
-		bool debugLog{ true };
+		bool debugLog{ false };
 		bool enableInPowerArmor{ true };
 		bool wallClip{ true };
 		bool customGround{ false };  // false = use the selected game's friction/accelerate/stop speed
@@ -91,6 +91,8 @@ namespace
 
 		// ---- perks: 0 off, 1 bonus, 2 unlock
 		int   perkMode{ 1 };
+		// perk names to look for (lower case, '|' between alternatives) - change for non-English games
+		std::string perkNames[5]{ "moving target", "strong back", "adamantium skeleton", "aquaboy|aquagirl", "sneak" };
 
 		// 1 Half-Life unit (1 inch) in Havok units (metres)
 		float unitScale{ 0.0254f };
@@ -229,6 +231,14 @@ namespace
 					B("bHL1BhopCap", g_cfg.hl1BhopCap);
 					B("bHL2JumpBoost", g_cfg.hl2JumpBoost);
 					B("bHL2ABH", g_cfg.hl2ABH);
+					{
+						static constexpr const char* kPerkKeys[5] = { "sPerkMovingTarget", "sPerkStrongBack", "sPerkAdamantiumSkeleton", "sPerkAquaboy", "sPerkSneak" };
+						for (int i = 0; i < 5; ++i) {
+							if (key == kPerkKeys[i] && !val.empty()) {
+								g_cfg.perkNames[i] = Lower(val);
+							}
+						}
+					}
 					B("bSurfaceFriction", g_cfg.surfaceFriction);
 					F("fSurfaceFrictionStrength", g_cfg.surfaceStrength);
 					F("fBobScale", g_cfg.bobScale);
@@ -277,11 +287,62 @@ namespace
 	}
 
 	// Defaults ship in MCM\Config\BHOP\settings.ini; MCM saves changes to MCM\Settings\BHOP.ini.
+	// Keeps every setting inside a sensible range, whatever the ini says.
+	void ValidateConfig()
+	{
+		auto& c = g_cfg;
+		auto  F = [](float& v, float lo, float hi, float def) {
+			if (!std::isfinite(v)) {
+				v = def;
+			}
+			v = std::clamp(v, lo, hi);
+		};
+		F(c.friction, 0.0f, 20.0f, 4.0f);
+		F(c.accelerate, 0.0f, 50.0f, 10.0f);
+		F(c.stopSpeed, 0.0f, 500.0f, 100.0f);
+		if (c.tickRate > 0.0f) {
+			F(c.tickRate, 20.0f, 500.0f, 66.67f);
+		}
+		F(c.responsiveness, 0.25f, 4.0f, 1.3f);
+		F(c.fullLoadAccelMult, 0.05f, 1.0f, 0.8f);
+		F(c.overencumberedAccelMult, 0.05f, 1.0f, 0.6f);
+		F(c.fullLoadFrictionMult, 0.05f, 2.0f, 1.0f);
+		F(c.powerArmorAccelMult, 0.05f, 2.0f, 0.75f);
+		F(c.powerArmorFrictionMult, 0.05f, 2.0f, 1.0f);
+		F(c.unitScale, 0.001f, 1.0f, 0.0254f);
+		F(c.hl1SprintMult, 1.0f, 3.0f, 1.35f);
+		F(c.hlPowerArmorSpeedMult, 0.1f, 2.0f, 0.85f);
+		F(c.airAccelerate, 0.0f, 100.0f, 10.0f);
+		F(c.airCap, 1.0f, 500.0f, 30.0f);
+		F(c.strafeAssist, 0.0f, 1.0f, 0.5f);
+		F(c.bhopGrace, 0.0f, 0.5f, 0.1f);
+		F(c.surfaceStrength, 0.0f, 1.0f, 1.0f);
+		F(c.bobScale, 0.0f, 5.0f, 1.0f);
+		F(c.rollAngle, -15.0f, 15.0f, 2.0f);
+		F(c.rollSpeed, 1.0f, 1000.0f, 200.0f);
+		F(c.punchScale, 0.0f, 5.0f, 1.0f);
+		F(c.volume, 0.0f, 4.0f, 1.0f);
+		F(c.runVolume, 0.0f, 1.0f, 0.5f);
+		F(c.walkVolume, 0.0f, 1.0f, 0.2f);
+		F(c.sneakVolumeMult, 0.0f, 1.0f, 0.5f);
+		F(c.runStepSpeed, 1.0f, 1000.0f, 140.0f);
+		F(c.minStepSpeed, 0.0f, 200.0f, 10.0f);
+		F(c.runInterval, 0.05f, 2.0f, 0.3f);
+		F(c.walkInterval, 0.05f, 2.0f, 0.4f);
+		F(c.sneakExtraInterval, 0.0f, 1.0f, 0.1f);
+		F(c.waterInterval, 0.05f, 2.0f, 0.6f);
+		F(c.landSoftSpeed, 0.0f, 2000.0f, 150.0f);
+		F(c.landHardSpeed, 0.0f, 2000.0f, 350.0f);
+		F(c.fallPainSpeed, 0.0f, 5000.0f, 580.0f);
+		c.filePriority = std::min<std::uint32_t>(c.filePriority, 255);
+	}
+
 	void LoadConfig()
 	{
-		g_cfg.materialOverrides.clear();
+		g_cfg = Config{};  // start from clean defaults, so a removed line doesn't keep an old value
 		const bool defaults = ReadIni("Data/MCM/Config/BHOP/settings.ini");
 		const bool user = ReadIni("Data/MCM/Settings/BHOP.ini");
+		ValidateConfig();
 		REX::INFO("Settings: defaults {}, MCM changes {}", defaults ? "found" : "MISSING", user ? "found" : "none yet");
 
 		const auto& d = g_cfg.mode == Mode::kHL1 ? kHL1Defaults : kHL2Defaults;
@@ -620,11 +681,20 @@ namespace
 				}
 				const auto name = Lower(std::string(RE::TESFullName::GetFullName(*perk)));
 				int        idx = -1;
-				if (name == "moving target") idx = kMovingTarget;
-				else if (name == "strong back") idx = kStrongBack;
-				else if (name == "adamantium skeleton") idx = kAdamantium;
-				else if (name == "aquaboy" || name == "aquagirl") idx = kAquaboy;
-				else if (name == "sneak") idx = kSneak;
+				for (int i = 0; i < 5 && idx < 0; ++i) {
+					std::string_view list = g_cfg.perkNames[i];
+					while (!list.empty()) {
+						const auto bar = list.find('|');
+						if (list.substr(0, bar) == name) {
+							idx = i;
+							break;
+						}
+						if (bar == std::string_view::npos) {
+							break;
+						}
+						list.remove_prefix(bar + 1);
+					}
+				}
 				if (idx >= 0) {
 					g_list[idx].push_back(perk);
 				}
@@ -781,6 +851,8 @@ namespace
 				g_state.bob = std::clamp(bob, -7.0f, 4.0f);
 			} else if (!BobOn()) {
 				g_state.bob = 0.0f;
+			} else {
+				g_state.bob *= std::exp(-10.0f * dt);  // in the air: ease back to centre instead of freezing
 			}
 
 			// V_CalcRoll: cl_rollangle 2, cl_rollspeed 200
@@ -837,6 +909,15 @@ namespace
 			a_out.z = q.w * bz + q.x * by - q.y * bx + q.z * bw;
 		}
 
+		void Reset()
+		{
+			g_state = State{};
+			g_punchKick = 0.0f;
+			g_velX = 0.0f;
+			g_velY = 0.0f;
+			g_onGround = true;
+		}
+
 		void Install()
 		{
 			auto cam = RE::PlayerCamera::GetSingleton();
@@ -848,18 +929,25 @@ namespace
 				return;
 			}
 			g_fpState = state;
+			static bool done = false;
+			if (done) {
+				return;  // never hook twice (another plugin may have chained after us)
+			}
+			done = true;
+			const char* name = RttiName(state);
+			if (!name || std::string_view(name).find("FirstPersonState") == std::string_view::npos) {
+				REX::ERROR("First person camera has an unexpected type ({}); camera effects NOT installed", name ? name : "unknown");
+				return;
+			}
 			auto vtbl = *reinterpret_cast<std::uintptr_t* const*>(state);
-			const auto rotMine = reinterpret_cast<std::uintptr_t>(&HookedGetRotation);
-			const auto transMine = reinterpret_cast<std::uintptr_t>(&HookedGetTranslation);
-			if (vtbl[0x0C] != rotMine) {
-				g_origRot = reinterpret_cast<GetRot_t>(vtbl[0x0C]);
-				REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 0x0C), rotMine);
+			if (!Game().Contains(vtbl[0x0C]) || !Game().Contains(vtbl[0x0D])) {
+				REX::WARN("Camera rotation/position already changed by another plugin (camera mod?); chaining after it");
 			}
-			if (vtbl[0x0D] != transMine) {
-				g_origTrans = reinterpret_cast<GetTrans_t>(vtbl[0x0D]);
-				REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 0x0D), transMine);
-			}
-			REX::INFO("Camera hooked (first person state {:X})", reinterpret_cast<std::uintptr_t>(state));
+			g_origRot = reinterpret_cast<GetRot_t>(vtbl[0x0C]);
+			REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 0x0C), reinterpret_cast<std::uintptr_t>(&HookedGetRotation));
+			g_origTrans = reinterpret_cast<GetTrans_t>(vtbl[0x0D]);
+			REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 0x0D), reinterpret_cast<std::uintptr_t>(&HookedGetTranslation));
+			REX::INFO("Camera hooked ({})", name);
 		}
 	}
 
@@ -1082,6 +1170,14 @@ namespace
 		std::vector<Request> g_queue;
 		std::atomic_bool     g_playQueued{ false };
 		std::mt19937         g_rng{ 12345 };
+		std::mutex           g_rngLock;  // used from the physics thread and the main thread
+
+		template <class T>
+		T Random(T a_min, T a_max)
+		{
+			std::scoped_lock lock(g_rngLock);
+			return std::uniform_int_distribution<T>(a_min, a_max)(g_rng);
+		}
 		int                  g_failLogs{ 0 };
 
 		void PlayNow(const Request& a_req, int a_set)
@@ -1098,7 +1194,7 @@ namespace
 			if (a_req.index >= 0 && static_cast<std::size_t>(a_req.index) < files.size()) {
 				idx = static_cast<std::size_t>(a_req.index);
 			} else {
-				idx = std::uniform_int_distribution<std::size_t>(0, files.size() - 1)(g_rng);
+				idx = Random<std::size_t>(0, files.size() - 1);
 			}
 
 			auto audio = RE::BSAudioManager::GetSingleton();
@@ -1168,9 +1264,6 @@ namespace
 		{
 			float timer{ 0.0f };
 			bool  left{ false };
-			bool  prevGround{ true };
-			float maxFall{ 0.0f };  // HL units/s, downward
-			int   rngTile{ 0 };
 		} g_step;
 
 		std::string SurfaceCategory(RE::bhkCharacterController* a_con, float& a_waterDepth)
@@ -1196,10 +1289,9 @@ namespace
 		// HL plays step 1 or 3 on the left foot, 2 or 4 on the right
 		int StepIndex(int a_set, const std::string& a_group)
 		{
-			std::uniform_int_distribution<int> coin(0, 1);
-			const int pick = coin(g_rng);
+			const int pick = Random<int>(0, 1);
 			g_step.left = !g_step.left;
-			if (a_set == 1 && a_group == "pl_tile" && std::uniform_int_distribution<int>(0, 4)(g_rng) == 0) {
+			if (a_set == 1 && a_group == "pl_tile" && Random<int>(0, 4) == 0) {
 				return 4;  // pl_tile5, HL1 plays it now and then
 			}
 			auto it = g_groups[a_set].find(a_group);
@@ -1219,28 +1311,24 @@ namespace
 		}
 
 		// called from the velocity hook for the player, every physics step
-		void Update(RE::bhkCharacterController* a_con, float a_dt, bool a_onGround, const RE::hkVector4f& a_actual, bool a_menus)
+		// a_jumped / a_landed / a_fall come from the movement code, so sounds and camera share one event
+		void Update(RE::bhkCharacterController* a_con, float a_dt, bool a_onGround, const RE::hkVector4f& a_actual, bool a_menus,
+			bool a_jumped, bool a_landed, float a_fall)
 		{
 			const int set = SoundSet();
 			if (set == 0 || !g_ready || a_menus || a_dt <= 0.0f || a_dt > 0.25f) {
-				g_step.prevGround = a_onGround;
 				return;
 			}
 
 			const float hSpeed = std::hypot(a_actual.x, a_actual.y) / g_cfg.unitScale;
-			const float vSpeed = a_actual.z / g_cfg.unitScale;
 
 			// jump + landing
 			if (g_cfg.jumpLandSounds) {
-				if (!a_onGround) {
-					g_step.maxFall = std::max(g_step.maxFall, -vSpeed);
-				}
-				if (g_step.prevGround && !a_onGround && vSpeed > 50.0f) {
+				if (a_jumped) {
 					PlayStep(a_con, 1.0f);  // Half-Life plays the floor sound at full volume when you jump
 				}
-				if (!g_step.prevGround && a_onGround) {
-					const float fall = g_step.maxFall;
-					Camera::OnLand(fall);
+				if (a_landed) {
+					const float fall = a_fall;
 					float       vol = 0.0f;
 					if (fall >= g_cfg.landHardSpeed) {
 						vol = 1.0f;
@@ -1254,13 +1342,8 @@ namespace
 					if (set == 1 && g_cfg.hl1FallPain && fall >= g_cfg.fallPainSpeed) {
 						Queue("pl_fallpain", 1, 1.0f);  // pl_fallpain3, as in Half-Life
 					}
-					g_step.maxFall = 0.0f;
 				}
 			}
-			if (a_onGround) {
-				g_step.maxFall = 0.0f;
-			}
-			g_step.prevGround = a_onGround;
 
 			g_step.timer = std::max(0.0f, g_step.timer - a_dt);
 
@@ -1328,7 +1411,7 @@ namespace
 			// still learning: look for the player in the event
 			bool found = false;
 			for (int i = 0; i < 16; ++i) {
-				if (g_playerHandle && u32[i] == g_playerHandle && ++g_handleHits[i] >= 3) {
+				if (g_playerHandle && u32[i] == g_playerHandle && ++g_handleHits[i] >= 1) {
 					g_handleOffset = i;
 					REX::INFO("Footstep events: player handle found at +{:X}", i * 4);
 				}
@@ -1339,7 +1422,7 @@ namespace
 			for (int i = 0; i < 8; ++i) {
 				if (u64[i] == reinterpret_cast<std::uintptr_t>(player)) {
 					found = true;
-					if (++g_ptrHits[i] >= 3) {
+					if (++g_ptrHits[i] >= 1) {
 						g_ptrOffset = i;
 						REX::INFO("Footstep events: player pointer found at +{:X}", i * 8);
 					}
@@ -1579,7 +1662,9 @@ namespace
 
 	struct InputState
 	{
-		float learned[4]{ 80.0f, 210.0f, 281.0f, 110.0f };  // Fallout's own top speeds, learned while you play
+		// Fallout's own top speeds, learned while you play: [0] normal, [1] Power Armor.
+		// Stored without your current speed multiplier, so buffs/debuffs don't spoil them.
+		float learned[2][4]{ { 80.0f, 210.0f, 281.0f, 110.0f }, { 70.0f, 180.0f, 240.0f, 100.0f } };
 		float heldTime{ 0.0f };
 		MoveClass lastClass{ MoveClass::kRun };
 		float blocked{ 0.0f };
@@ -1606,7 +1691,7 @@ namespace
 				speed *= g_cfg.hlPowerArmorSpeedMult;
 			}
 		} else {
-			speed = g_input.learned[static_cast<int>(a_cls)];
+			speed = g_input.learned[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(a_cls)] * g_speedMult.load();
 		}
 		if (a_sprinting && Perks::Bonus()) {
 			speed *= 1.0f + 0.04f * static_cast<float>(Perks::Rank(Perks::kMovingTarget));  // Moving Target
@@ -1651,8 +1736,9 @@ namespace
 		if (w.cls == g_input.lastClass && w.mag > 0.95f && vanSpeed > 1.0f) {
 			g_input.heldTime += a_dt;
 			if (g_input.heldTime > 0.5f) {
-				auto& l = g_input.learned[static_cast<int>(w.cls)];
-				l += (vanSpeed - l) * std::min(1.0f, a_dt * 2.0f);
+				auto&       l = g_input.learned[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(w.cls)];
+				const float base = vanSpeed / std::max(g_speedMult.load(), 0.1f);
+				l += (base - l) * std::min(1.0f, a_dt * 2.0f);
 			}
 		} else {
 			g_input.heldTime = 0.0f;
@@ -1797,6 +1883,7 @@ namespace
 		bool  prevRawGround{ true };
 		float airTime{ 0.0f };
 		bool  jumpedThisAir{ false };
+		float maxFall{ 0.0f };  // fastest downward speed this time in the air (HL units/s)
 		float grace{ 0.0f };
 		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
 	} g_air;
@@ -1866,7 +1953,19 @@ namespace
 				g_stats.firstCalls, dt, wallDt, state, a_vel.x, a_vel.y, a_vel.z, actual.x, actual.y, actual.z, a_this->flags);
 		}
 
-		Sounds::Update(a_this, dt, onGround, actual, menus);
+		// one landing / takeoff event for sounds AND camera (each works without the other)
+		if (!rawGround) {
+			g_air.maxFall = std::max(g_air.maxFall, -actual.z / g_cfg.unitScale);
+		}
+		const bool landEvent = !g_air.prevGround && onGround;
+		const float fallSpeed = g_air.maxFall;
+		if (landEvent && !menus) {
+			Camera::OnLand(fallSpeed);
+		}
+		Sounds::Update(a_this, dt, onGround, actual, menus, jumpedNow, landEvent, fallSpeed);
+		if (onGround) {
+			g_air.maxFall = 0.0f;
+		}
 		Camera::g_velX = actual.x / g_cfg.unitScale;
 		Camera::g_velY = actual.y / g_cfg.unitScale;
 		Camera::g_onGround = onGround;
@@ -1983,16 +2082,32 @@ namespace
 		if (!con) {
 			return false;
 		}
-		auto       vtbl = *reinterpret_cast<std::uintptr_t**>(con);
-		const auto slot = reinterpret_cast<std::uintptr_t>(vtbl + kSetLinearVelocityIdx);
-		const auto current = vtbl[kSetLinearVelocityIdx];
-		const auto mine = reinterpret_cast<std::uintptr_t>(&HookedSetLinearVelocity);
-		if (current == mine) {
+		auto vtbl = *reinterpret_cast<std::uintptr_t**>(con);
+		static std::uintptr_t* hookedVtbl = nullptr;
+		if (vtbl == hookedVtbl) {
+			return true;  // already hooked (never hook twice: another plugin may have chained after us)
+		}
+		if (hookedVtbl) {
+			REX::WARN("Player controller changed type (vtable {:X}); Half-Life movement stays on the first one only",
+				reinterpret_cast<std::uintptr_t>(vtbl));
 			return true;
 		}
+		const char* name = RttiName(con);
+		if (!name || std::string_view(name).find("bhkChar") == std::string_view::npos) {
+			REX::ERROR("Player controller has an unexpected type ({}); movement hook NOT installed", name ? name : "unknown");
+			hookedVtbl = vtbl;
+			return true;
+		}
+		const auto slot = reinterpret_cast<std::uintptr_t>(vtbl + kSetLinearVelocityIdx);
+		const auto current = vtbl[kSetLinearVelocityIdx];
+		if (!Game().Contains(current)) {
+			REX::WARN("SetLinearVelocity is already changed by another plugin; chaining after it");
+		}
 		g_origSetVel = reinterpret_cast<SetVel_t>(current);
-		REL::WriteSafeData(slot, mine);
-		REX::INFO("Hooked player controller: vtable {:X}, SetLinearVelocityImpl {:X}", reinterpret_cast<std::uintptr_t>(vtbl), current);
+		REL::WriteSafeData(slot, reinterpret_cast<std::uintptr_t>(&HookedSetLinearVelocity));
+		hookedVtbl = vtbl;
+		REX::INFO("Hooked player controller ({}): vtable +{:X}, slot 0x3A was +{:X}", name,
+			reinterpret_cast<std::uintptr_t>(vtbl) - Game().base, current - Game().base);
 		return true;
 	}
 
@@ -2014,6 +2129,18 @@ namespace
 		});
 	}
 
+	// Fresh start after loading a save or starting a new game: nothing carries over.
+	void ResetRuntimeState()
+	{
+		std::scoped_lock lock(g_simLock);
+		g_sim = Sim{};
+		g_air = AirState{};
+		g_input = InputState{};
+		g_stats = Stats{};
+		Camera::Reset();
+		Sounds::OnGameLoaded();
+	}
+
 	// MCM lives in the pause menu: when it closes, read the settings again so changes apply right away.
 	void ReloadSettings()
 	{
@@ -2022,6 +2149,7 @@ namespace
 			LoadConfig();
 			Sounds::BuildMaterials();
 		}
+		Perks::Resolve();
 		Sounds::InstallFootstepHook();
 	}
 
@@ -2051,11 +2179,7 @@ namespace
 			break;
 		case F4SE::MessagingInterface::kPostLoadGame:
 		case F4SE::MessagingInterface::kNewGame:
-			{
-				std::scoped_lock lock(g_simLock);
-				g_sim = Sim{};
-				Sounds::OnGameLoaded();
-			}
+			ResetRuntimeState();
 			ScheduleInstall(600);
 			if (auto task = F4SE::GetTaskInterface()) {
 				task->AddTask([]() { Camera::Install(); });
