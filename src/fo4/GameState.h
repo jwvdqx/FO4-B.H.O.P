@@ -119,7 +119,7 @@ namespace
 			g_edgeAhead = false;
 			return;
 		}
-		constexpr float kHL = 1.0f / (0.0254f * 69.99124f);  // HL unit in game units
+		constexpr float kHL = 0.0254f * 69.99125f;  // 1 HL unit (inch) = 1.778 game units
 		const float ahead = 16.0f * kHL, down = 34.0f * kHL, half = 16.0f * kHL;  // HL1 hull: 32 wide
 		const auto& pos = a_player->data.location;
 		// three rays across the player's width (HL1 sweeps a box)
@@ -140,6 +140,138 @@ namespace
 			}
 		}
 		g_edgeAhead = hits == 0;
+	}
+
+	// ---------------------------------------------------------------------
+	// Wall probe (experiment): when the movement code finds a wall, it asks for the real surface to be
+	// checked. Rays go from your body's edge toward the wall at knee, waist and chest height; the
+	// surface's own direction then replaces the guess (when the two roughly agree).
+	// Runs on the main thread, like the edge probe.
+	// ---------------------------------------------------------------------
+	namespace WallProbe
+	{
+		std::atomic<float>     g_reqX{ 0.0f }, g_reqY{ 0.0f };
+		std::atomic_bool       g_queued{ false };
+		std::atomic<float>     g_nx{ 0.0f }, g_ny{ 0.0f };  // into the wall
+		std::atomic<long long> g_foundMs{ 0 };
+		std::atomic<float>     g_radiusGame{ 22.0f };      // your body's radius (game units), from the controller
+		int                    g_logs{ 0 };
+
+		void Probe()
+		{
+			g_queued = false;
+			auto player = RE::PlayerCharacter::GetSingleton();
+			auto cell = player ? player->GetParentCell() : nullptr;
+			const float dx = g_reqX.load(), dy = g_reqY.load();
+			if (!cell || std::hypot(dx, dy) < 0.5f) {
+				return;
+			}
+			constexpr float kHL = 0.0254f * 69.99125f;  // HL unit in game units
+			const auto&     pos = player->data.location;
+			const float     startOff = g_radiusGame.load() + 1.0f;  // start just outside your body
+			const float     reach = 24.0f * kHL;
+			float           best = 2.0f, nx = 0.0f, ny = 0.0f;
+			for (const float h : { 20.0f, 36.0f, 54.0f }) {
+				const RE::NiPoint3 start(pos.x + dx * startOff, pos.y + dy * startOff, pos.z + h * kHL);
+				const RE::NiPoint3 end(start.x + dx * reach, start.y + dy * reach, start.z);
+				RE::bhkPickData pick;
+				pick.SetStartEnd(start, end);
+				static_cast<void>(cell->Pick(pick));
+				if (!pick.HasHit()) {
+					continue;
+				}
+				const auto& n = pick.result.normal;  // points out of the surface, toward you
+				const float frac = pick.GetHitFraction();
+				const float hlen = std::hypot(n.x, n.y);
+				if (std::fabs(n.z) < 0.7f && hlen > 0.3f && frac < best) {
+					best = frac;
+					nx = -n.x / hlen;
+					ny = -n.y / hlen;
+				}
+			}
+			if (best <= 1.0f) {
+				g_nx = nx;
+				g_ny = ny;
+				g_foundMs = NowMs();
+			}
+			if (g_cfg.debugLog && g_logs < 30) {
+				++g_logs;
+				REX::INFO("wall probe: asked ({:.2f},{:.2f}) found {} ({:.2f},{:.2f})", dx, dy, best <= 1.0f, nx, ny);
+			}
+		}
+
+		// physics thread: check the wall in this direction (into the wall)
+		void Request(hlmath::Vec2 a_dir)
+		{
+			g_reqX = a_dir.x;
+			g_reqY = a_dir.y;
+			if (!g_queued.exchange(true)) {
+				if (auto task = F4SE::GetTaskInterface()) {
+					task->AddTask([]() { Probe(); });
+				} else {
+					g_queued = false;
+				}
+			}
+		}
+
+		// the last surface direction found, if it's recent
+		hlmath::Vec2 Recent()
+		{
+			if (NowMs() - g_foundMs.load() > 200) {
+				return {};
+			}
+			return { g_nx.load(), g_ny.load() };
+		}
+	}
+
+	// ---------------------------------------------------------------------
+	// Fallout's own top speeds, read from the movement type the game is using for you right now
+	// (normal, sneaking, Power Armor). [Power Armor][walk, run, sprint, sneak], HL units/s, before
+	// SpeedMult. 0 = not known yet.
+	// ---------------------------------------------------------------------
+	std::atomic<float> g_dataSpeed[2][4]{};
+	std::atomic<float> g_falloutJumpHL{ 0.0f };  // Fallout's jump height (fJumpHeightMin) in HL units, 0 = unknown
+	int                g_speedLogs{ 0 };
+
+	void ReadMoveSpeeds(RE::PlayerCharacter* a_player)
+	{
+		if (!a_player->currentProcess || !a_player->currentProcess->high) {
+			return;
+		}
+		const auto&   sp = a_player->currentProcess->high->currentMovementType.defaultData.speeds;
+		constexpr int kFwd = static_cast<int>(RE::Movement::SPEED_DIRECTION::kForward);
+		constexpr float kToHL = 1.0f / (0.0254f * 69.99125f);  // game units -> HL units
+		const int     pa = g_inPowerArmor.load() ? 1 : 0;
+		auto          set = [&](int a_cls, float a_game) {
+			const float hl = a_game * kToHL;
+			if (std::isfinite(hl) && hl > 5.0f && hl < 2000.0f) {
+				g_dataSpeed[pa][a_cls] = hl;
+			}
+		};
+		// speeds[direction][standing, walk, run, sprint]
+		if (a_player->IsSneaking()) {
+			auto controls = RE::PlayerControls::GetSingleton();
+			const bool running = controls ? controls->data.running : true;
+			set(3, sp[kFwd][running ? 2 : 1]);
+		} else {
+			set(0, sp[kFwd][1]);
+			set(1, sp[kFwd][2]);
+			set(2, sp[kFwd][3]);
+		}
+		if (auto gs = RE::GameSettingCollection::GetSingleton()) {
+			if (auto jump = gs->GetSetting("fJumpHeightMin"); jump) {
+				const float h = jump->GetFloat() * kToHL;
+				if (std::isfinite(h) && h > 5.0f && h < 500.0f) {
+					g_falloutJumpHL = h;
+				}
+			}
+		}
+		if (g_cfg.debugLog && g_speedLogs < 6) {
+			++g_speedLogs;
+			REX::INFO("movement type '{}': forward walk {:.0f} run {:.0f} sprint {:.0f} game units/s (sneaking {}, PA {})",
+				a_player->currentProcess->high->currentMovementType.typeName.c_str(), sp[kFwd][1], sp[kFwd][2], sp[kFwd][3],
+				a_player->IsSneaking(), pa == 1);
+		}
 	}
 
 	void UpdateCache()
@@ -168,6 +300,7 @@ namespace
 		}
 		Perks::Update(player);
 		ProbeEdge(player);
+		ReadMoveSpeeds(player);
 
 		float load = 0.0f;
 		if (auto avs = RE::ActorValue::GetSingleton(); avs && avs->carryWeight) {

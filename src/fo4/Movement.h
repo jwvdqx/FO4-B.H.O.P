@@ -46,16 +46,6 @@ namespace
 		g_sim.vy = a_v.y;
 	}
 
-	void Friction(float a_dt, float a_frictionMult)
-	{
-		SetSimVel(hlmath::Friction(SimVel(), g_active.friction, g_active.stopSpeed, a_frictionMult, a_dt));
-	}
-
-	void Accelerate(float a_dirX, float a_dirY, float a_wishSpeed, float a_dt, float a_accelMult)
-	{
-		SetSimVel(hlmath::Accelerate(SimVel(), { a_dirX, a_dirY }, a_wishSpeed, g_active.accelerate, a_accelMult, a_dt));
-	}
-
 	void WeightMults(float& a_accel, float& a_friction)
 	{
 		a_accel = 1.0f;
@@ -106,24 +96,6 @@ namespace
 		g_sim.acc = 0.0f;
 	}
 
-	void PrintStats()
-	{
-		if (!g_cfg.debugLog) {
-			return;
-		}
-		const auto now = NowMs();
-		if (now - g_stats.lastPrint < 1000) {
-			return;
-		}
-		g_stats.lastPrint = now;
-		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {}",
-			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed, g_stats.reportedSpeed, g_stats.measured ? "" : ", not measured",
-			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load());
-		g_stats.calls = 0;
-		g_stats.groundCalls = 0;
-		g_stats.clips = 0;
-		g_stats.pushes = 0;
-	}
 
 	// ---------------------------------------------------------------------
 	// surfaces (Source multiplies friction AND acceleration by the surface)
@@ -177,7 +149,29 @@ namespace
 		float prevYaw{ 0.0f };
 		bool  hasYaw{ false };
 		float yawRate{ 0.0f };  // radians/s, positive = turning right
+		bool  seen[2][4]{};     // learned from what Fallout actually did
+		bool  warned[2][4]{};
 	} g_input;
+
+	void PrintStats()
+	{
+		if (!g_cfg.debugLog) {
+			return;
+		}
+		const auto now = NowMs();
+		if (now - g_stats.lastPrint < 1000) {
+			return;
+		}
+		g_stats.lastPrint = now;
+		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {} | run speed data {:.0f} seen {:.0f} | slowest step sound {:.2f} ms",
+			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed, g_stats.reportedSpeed, g_stats.measured ? "" : ", not measured",
+			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load(),
+			g_dataSpeed[g_inPowerArmor.load() ? 1 : 0][1].load(), g_input.learned[g_inPowerArmor.load() ? 1 : 0][1], Sounds::g_loadMaxMs.exchange(0.0f));
+		g_stats.calls = 0;
+		g_stats.groundCalls = 0;
+		g_stats.clips = 0;
+		g_stats.pushes = 0;
+	}
 
 	float ClassSpeed(MoveClass a_cls, bool a_sprinting)
 	{
@@ -197,7 +191,21 @@ namespace
 				speed *= g_cfg.hlPowerArmorSpeedMult;
 			}
 		} else {
-			speed = g_input.learned[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(a_cls)] * g_speedMult.load();
+			// Fallout's own speed from its movement data; what we learned from watching Fallout is the backup,
+			// and the check: if the two disagree a lot, the learned one wins (the data may not mean what we think).
+			const int   pa = g_inPowerArmor.load() ? 1 : 0;
+			const int   c = static_cast<int>(a_cls);
+			float       base = g_input.learned[pa][c];
+			const float data = g_dataSpeed[pa][c].load();
+			if (data > 0.0f) {
+				if (!g_input.seen[pa][c] || std::fabs(data - base) <= 0.25f * base) {
+					base = data;
+				} else if (!g_input.warned[pa][c]) {
+					g_input.warned[pa][c] = true;
+					REX::WARN("Fallout's movement data says {:.0f} but it actually moves you at {:.0f} (HL u/s, class {}): using what it does", data, base, c);
+				}
+			}
+			speed = base * g_speedMult.load();
 		}
 		if (a_sprinting && Perks::Bonus()) {
 			speed *= 1.0f + 0.04f * static_cast<float>(Perks::Rank(Perks::kMovingTarget));  // Moving Target
@@ -245,6 +253,7 @@ namespace
 				auto&       l = g_input.learned[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(w.cls)];
 				const float base = vanSpeed / std::max(g_speedMult.load(), 0.1f);
 				l += (base - l) * std::min(1.0f, a_dt * 2.0f);
+				g_input.seen[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(w.cls)] = true;
 			}
 		} else {
 			g_input.heldTime = 0.0f;
@@ -290,43 +299,6 @@ namespace
 			w.speed = g_cfg.speedMode == 1 ? ClassSpeed(w.cls, sprinting) * std::max(w.mag, 0.3f) : vanSpeed;
 		}
 		return w;
-	}
-
-	// ---------------------------------------------------------------------
-	// Half-Life air acceleration (PM_AirAccelerate) + optional stick assist
-	// ---------------------------------------------------------------------
-	void AirAccelerate(const Wish& a_wish, float a_dt, float a_accelMult, float a_surface = 1.0f)
-	{
-		if (a_wish.speed <= 0.0f) {
-			return;
-		}
-		float dirX = a_wish.dirX, dirY = a_wish.dirY;
-		const float speed = std::hypot(g_sim.vx, g_sim.vy);
-		const float cap = g_cfg.airCap;
-		const float accel = g_cfg.airAccelerate * a_accelMult;
-		const float accelSpeedMax = accel * a_wish.speed * a_dt;
-
-		// Stick assist: when you strafe and turn the same way (the Half-Life technique),
-		// steer the wish direction toward the angle that gains the most speed.
-		const float assist = std::clamp(g_cfg.strafeAssist, 0.0f, 1.0f);
-		if (assist > 0.0f && speed > cap && std::fabs(a_wish.inX) > 0.3f && a_wish.inX * g_input.yawRate > 0.2f) {
-			const float vx = g_sim.vx / speed, vy = g_sim.vy / speed;
-			const float cross = vx * dirY - vy * dirX;  // which side of the velocity the wish is on
-			const float side = cross >= 0.0f ? 1.0f : -1.0f;
-			const float c = std::clamp((cap - std::min(accelSpeedMax, cap)) / speed, 0.0f, 1.0f);
-			const float th = std::acos(c);
-			const float cs = std::cos(th), sn = std::sin(th) * side;
-			const float ox = vx * cs - vy * sn, oy = vx * sn + vy * cs;  // velocity rotated by th
-			dirX = dirX + (ox - dirX) * assist;
-			dirY = dirY + (oy - dirY) * assist;
-			const float l = std::hypot(dirX, dirY);
-			if (l > 0.001f) {
-				dirX /= l;
-				dirY /= l;
-			}
-		}
-
-		SetSimVel(hlmath::AirAccelerate(SimVel(), { dirX, dirY }, a_wish.speed, accel, cap, a_surface, a_dt));
 	}
 
 	// ---------------------------------------------------------------------
@@ -489,7 +461,36 @@ namespace
 		bool  hasLastOut{ false };
 		float grace{ 0.0f };
 		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
+		float sentVz{ 0.0f };        // vertical speed we handed the game last step (m/s)
+		float measVz{ 0.0f };        // vertical speed you really moved at (m/s)
+		bool  hasMeasVz{ false };
+		// Half-Life jumping and gravity (iJumpPhysics 1/2)
+		bool  vzOn{ false };         // we're in charge of your vertical speed
+		float vz{ 0.0f };            // our vertical speed (m/s)
+		bool  hlJump{ false };       // this jump used Half-Life physics (don't learn Fallout's jump from it)
 	} g_air;
+
+	// A fresh crouch press in the air that should become a crouch-jump? Returns the lift in metres (0 = no).
+	float CrouchJumpLift(float a_vz, float a_gravity)
+	{
+		const bool pressed = NowMs() - g_crouchPressedMs.load() < 120;
+		if (!pressed || g_air.crouchJumped || g_crouchWasSneaking.load() || g_air.airTime <= 0.05f) {
+			return 0.0f;
+		}
+		const float window = a_gravity * g_cfg.crouchJumpWindow;  // speed lost in the window after the peak
+		if (a_vz <= -window) {
+			return 0.0f;
+		}
+		const bool hl1 = g_cfg.mode == Mode::kHL1;
+		float      liftHL = hl1 ? 18.0f : 36.0f;  // HL1: hull centre, HL2: feet move up the full difference
+		if (g_cfg.crouchJumpHeight == 1 && g_cfg.jumpPhysics != 2) {
+			liftHL *= g_air.jumpHeightHL / (hl1 ? 45.0f : 21.3f);  // same share of Fallout's own jump
+		}
+		g_air.crouchJumped = true;
+		g_landSneak = true;
+		g_crouchPressedMs = 0;
+		return liftHL * g_cfg.unitScale;
+	}
 
 	// Crouch-jump: Fallout can't shrink your body mid-air, so we give the upward speed that adds exactly
 	// the height Half-Life's duck-jump gives. Physics still handles ceilings.
@@ -497,7 +498,7 @@ namespace
 	float CrouchJumpVertical(float a_inVz, float a_actualVz, bool a_rawGround, float a_dt)
 	{
 		// measure gravity in the air from the game's own vertical speed
-		if (!a_rawGround && g_air.hasPrevVz && a_dt > 0.001f && g_air.boostVz == 0.0f) {
+		if (!a_rawGround && g_air.hasPrevVz && a_dt > 0.001f && g_air.boostVz == 0.0f && !g_air.vzOn) {
 			const float g = (g_air.prevVz - a_inVz) / a_dt;
 			if (g > 3.0f && g < 40.0f) {
 				g_air.gravity += (g - g_air.gravity) * 0.1f;
@@ -534,31 +535,80 @@ namespace
 		}
 
 		// a fresh crouch press in the air?
-		const bool pressed = NowMs() - g_crouchPressedMs.load() < 120;
-		if (pressed && !g_air.crouchJumped && !g_crouchWasSneaking.load() && g_air.airTime > 0.05f) {
-			const float vz = a_actualVz;  // m/s, + is up
-			const float window = g_air.gravity * g_cfg.crouchJumpWindow;  // speed lost in the window after the peak
-			if (vz > -window) {
-				const bool  hl1 = g_cfg.mode == Mode::kHL1;
-				float       liftHL = hl1 ? 18.0f : 36.0f;  // HL1: hull centre, HL2: feet move up the full difference
-				if (g_cfg.crouchJumpHeight == 1) {
-					liftHL *= g_air.jumpHeightHL / (hl1 ? 45.0f : 21.3f);  // same share of Fallout's own jump
-				}
-				const float lift = liftHL * g_cfg.unitScale;  // metres
-				const float newVz = hlmath::CrouchLiftSpeed(vz, g_air.gravity, lift);
-				g_air.crouchJumped = true;
-				g_landSneak = true;
-				g_crouchPressedMs = 0;
-				g_air.boostVz = newVz - a_inVz;
-				g_air.boostMode = 0;
-				outVz = newVz;
-				if (g_cfg.debugLog) {
-					REX::INFO("crouch-jump: +{:.0f} HL units, vertical {:.2f} -> {:.2f} m/s (gravity {:.2f})", liftHL, vz, newVz, g_air.gravity);
-				}
+		const float vz = a_actualVz;  // m/s, + is up
+		if (const float lift = CrouchJumpLift(vz, g_air.gravity); lift > 0.0f) {
+			const float newVz = hlmath::CrouchLiftSpeed(vz, g_air.gravity, lift);
+			g_air.boostVz = newVz - a_inVz;
+			g_air.boostMode = 0;
+			outVz = newVz;
+			if (g_cfg.debugLog) {
+				REX::INFO("crouch-jump: +{:.0f} HL units, vertical {:.2f} -> {:.2f} m/s (gravity {:.2f})", lift / g_cfg.unitScale, vz, newVz, g_air.gravity);
 			}
 		}
 		g_air.lastOutVz = outVz;
 		g_air.lastInVz = a_inVz;
 		return outVz;
+	}
+
+	// Half-Life jumping and gravity (iJumpPhysics 1 or 2). While you're in the air we hand the game our own
+	// vertical speed every step, with Half-Life's gravity (sv_gravity: HL1 800, HL2 600 units/s^2).
+	// Standing on the ground, Fallout is in charge as usual. Returns the vertical speed for this step (m/s).
+	float FalloutJumpHeightHL()
+	{
+		const float h = g_falloutJumpHL.load();
+		return h > 0.0f ? h : g_air.jumpHeightHL;
+	}
+
+	float HLVertical(float a_inVz, bool a_rawGround, bool a_onGround, bool a_jumpedNow, float a_dt)
+	{
+		if (a_rawGround) {
+			g_air.vzOn = false;
+			return a_inVz;
+		}
+		const bool  hl1 = g_cfg.mode == Mode::kHL1;
+		const float g = (hl1 ? 800.0f : 600.0f) * g_cfg.unitScale;  // m/s^2
+		if (a_jumpedNow) {
+			// exact: HL1 PM_Jump sqrt(2*800*45) = 268 u/s (45 units high); HL2 CheckJumpButton sqrt(2*600*21) = 159 u/s (21 high)
+			const float heightHL = g_cfg.jumpPhysics == 2 ? (hl1 ? 45.0f : 21.0f) : FalloutJumpHeightHL();
+			g_air.vz = hlcore::JumpSpeed(g, heightHL * g_cfg.unitScale);
+			g_air.vzOn = true;
+			g_air.hlJump = true;
+			if (g_cfg.debugLog) {
+				REX::INFO("HL jump: {:.0f} HL units high, takeoff {:.0f} u/s, gravity {:.0f} u/s2", heightHL, g_air.vz / g_cfg.unitScale, g / g_cfg.unitScale);
+			}
+		} else if (!g_air.vzOn) {
+			if (a_onGround) {
+				return a_inVz;  // a short stair hop: Fallout keeps it
+			}
+			g_air.vz = g_air.hasMeasVz ? g_air.measVz : a_inVz;  // walked off a ledge: carry on from your real speed
+			g_air.vzOn = true;
+		} else {
+			// a ceiling (or anything) stopping you going up: follow what really happened
+			if (g_air.hasMeasVz && g_air.sentVz > 0.5f && g_air.measVz < g_air.sentVz * 0.8f - 0.3f) {
+				g_air.vz = std::min(g_air.vz, g_air.measVz);
+			}
+			// something launched you (explosion, script): Fallout's own vertical speed jumped up
+			const float expectFallout = g_air.lastInVz - g_air.gravity * a_dt;
+			const float expectOurs = g_air.sentVz - g_air.gravity * a_dt;
+			const float kick = a_inVz - std::max(expectFallout, expectOurs);
+			if (kick > 3.0f) {
+				g_air.vz += kick;
+			}
+		}
+		if (g_cfg.crouchJump) {
+			if (const float lift = CrouchJumpLift(g_air.vz, g); lift > 0.0f) {
+				const float before = g_air.vz;
+				g_air.vz = hlmath::CrouchLiftSpeed(before, g, lift);
+				if (g_cfg.debugLog) {
+					REX::INFO("crouch-jump (HL gravity): +{:.0f} HL units, vertical {:.2f} -> {:.2f} m/s", lift / g_cfg.unitScale, before, g_air.vz);
+				}
+			}
+		}
+		const float maxV = 2000.0f * g_cfg.unitScale;  // sv_maxvelocity
+		float       during = hlcore::GravityStep(g_air.vz, g, a_dt);
+		g_air.vz = std::clamp(g_air.vz, -maxV, maxV);
+		during = std::clamp(during, -maxV, maxV);
+		g_air.lastInVz = a_inVz;
+		return during;
 	}
 }

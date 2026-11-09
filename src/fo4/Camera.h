@@ -9,7 +9,7 @@ namespace
 	// =====================================================================
 	namespace Camera
 	{
-		constexpr float kHLToGame = 1.0f / (0.0254f * 69.99124f);  // 1 HL unit (inch) in game units
+		constexpr float kHLToGame = 0.0254f * 69.99125f;  // 1 HL unit (inch) = 1.778 game units
 
 		std::atomic<float> g_velX{ 0.0f };  // player velocity, HL units/s (written by the velocity hook)
 		std::atomic<float> g_velY{ 0.0f };

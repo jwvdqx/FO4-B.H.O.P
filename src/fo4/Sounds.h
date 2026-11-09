@@ -9,6 +9,8 @@ namespace
 	// =====================================================================
 	namespace Sounds
 	{
+		std::atomic<float> g_loadMaxMs{ 0.0f };  // slowest footstep sound creation since the last debug line (ms)
+
 		// sound groups: files named <group><n>.wav in Data\Sound\FX\BHOP\HL1 or HL2
 		struct Group
 		{
@@ -260,7 +262,14 @@ namespace
 			}
 			RE::BSSoundHandle   handle;
 			RE::BSResource::ID  id(files[idx].c_str());
+			const auto loadStart = std::chrono::steady_clock::now();
 			audio->GetSoundHandleByFile(handle, id, g_cfg.fileSoundFlags, static_cast<std::uint8_t>(g_cfg.filePriority));
+			{
+				// how long creating the sound took (debug log shows the slowest each second: hitch check)
+				const float ms = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - loadStart).count();
+				float       prev = g_loadMaxMs.load();
+				while (ms > prev && !g_loadMaxMs.compare_exchange_weak(prev, ms)) {}
+			}
 			if (!handle.IsValid()) {
 				if (g_failLogs++ < 5) {
 					REX::WARN("Could not create sound for {}", files[idx]);

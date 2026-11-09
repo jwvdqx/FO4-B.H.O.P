@@ -33,8 +33,12 @@ namespace
 		bool debugLog{ false };
 		bool enableInPowerArmor{ true };
 		bool wallClip{ true };
+		bool wallProbe{ true };       // check the real wall surface to fine-tune the wall direction (experiment)
+		int  jumpPhysics{ 0 };        // 0 = Fallout jump and gravity, 1 = HL gravity with Fallout's jump height, 2 = exact HL
+		bool record{ false };         // write a movement recording after closing the pause menu
+		float recordSeconds{ 15.0f };
 		bool customGround{ false };  // false = use the selected game's friction/accelerate/stop speed
-		int  smoothing{ 2 };         // 0 = exact tick, 1 = exact tick + interpolation, 2 = every frame (most responsive)
+		int  smoothing{ 2 };         // 0 = exact tick (delayed), 1 = exact tick + blending, 2 = every frame in Half-Life-sized steps (no delay)
 
 		// ---- camera (Half-Life view effects)
 		int   viewBob{ 1 };   // 0 off, 1 = like the game (HL1 on, HL2 off), 2 on
@@ -205,6 +209,12 @@ namespace
 					B("bDebugLog", g_cfg.debugLog);
 					B("bEnableInPowerArmor", g_cfg.enableInPowerArmor);
 					B("bWallClip", g_cfg.wallClip);
+					B("bWallProbe", g_cfg.wallProbe);
+					B("bRecord", g_cfg.record);
+					F("fRecordSeconds", g_cfg.recordSeconds);
+					if (key == "iJumpPhysics") {
+						g_cfg.jumpPhysics = std::clamp(std::stoi(val), 0, 2);
+					}
 					B("bCustomGround", g_cfg.customGround);
 					if (key == "iSmoothing") {
 						g_cfg.smoothing = std::clamp(std::stoi(val), 0, 2);
@@ -336,6 +346,7 @@ namespace
 		F(c.strafeAssist, 0.0f, 1.0f, 0.5f);
 		F(c.bhopGrace, 0.0f, 0.5f, 0.05f);
 		F(c.pushThreshold, 10.0f, 1000.0f, 60.0f);
+		F(c.recordSeconds, 1.0f, 120.0f, 15.0f);
 		F(c.crouchJumpWindow, 0.0f, 1.0f, 0.15f);
 		F(c.edgeFrictionMult, 1.0f, 10.0f, 2.0f);
 		F(c.surfaceStrength, 0.0f, 1.0f, 1.0f);

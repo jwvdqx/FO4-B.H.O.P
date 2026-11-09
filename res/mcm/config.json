@@ -101,7 +101,7 @@
           "id": "iSmoothing:General",
           "text": "Smoothness",
           "type": "dropdown",
-          "help": "Every frame: smoothest, no delay (recommended). Exact tick: Half-Life's tick rate for ground and air, can feel steppy at 40-60 fps. Exact tick + smoothing: smooth, up to one tick of delay.",
+          "help": "Every frame (recommended): every frame is split into Half-Life-sized steps done right away, so you get Half-Life's results at any frame rate with no delay. Exact tick: can feel steppy at 40-60 fps. Exact tick + smoothing: smooth, up to one tick of delay.",
           "valueOptions": {
             "options": [
               "Exact tick",
@@ -160,6 +160,15 @@
           "text": "Walls take your speed",
           "type": "switcher",
           "help": "Walls, NPCs and doors take away the part of your speed that goes into them, and you slide along the rest, like in Half-Life.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bWallProbe:General",
+          "text": "Check wall surfaces (experiment)",
+          "type": "switcher",
+          "help": "When you hit a wall, the mod checks the real wall surface to get its exact direction, for cleaner wall slides. Off: it uses the guess from how you moved.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -489,6 +498,20 @@
               "Off",
               "Exact",
               "Scaled to Fallout's jump"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iJumpPhysics:Air",
+          "text": "Jumping and gravity",
+          "type": "dropdown",
+          "help": "Fallout: Fallout's own jump and fall. HL gravity: Half-Life's stronger gravity with Fallout's jump height (same height, quicker jump). Exact Half-Life: HL1 jumps 45 units high, HL2 only 21 (duck-jump onto things). Falls use it too, so fall damage may change.",
+          "valueOptions": {
+            "options": [
+              "Fallout",
+              "HL gravity, Fallout height",
+              "Exact Half-Life"
             ],
             "sourceType": "ModSettingInt"
           }
@@ -873,6 +896,27 @@
           "help": "Troubleshooting only: writes test info to Documents\\My Games\\Fallout4\\F4SE\\BHOP.log.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bRecord:General",
+          "text": "Record movement",
+          "type": "switcher",
+          "help": "For tuning: each time you close the pause menu with this on, the next seconds of movement are written to Documents\\My Games\\Fallout4\\F4SE\\BHOP_record.csv. Send it with BHOP.log. Off for normal play.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fRecordSeconds:General",
+          "text": "Recording length (seconds)",
+          "type": "slider",
+          "help": "How long each recording lasts.",
+          "valueOptions": {
+            "min": 5,
+            "max": 60,
+            "step": 5,
+            "sourceType": "ModSettingFloat"
           }
         },
         {

@@ -46,9 +46,13 @@ namespace
 			RE::hkVector4f pos;
 			a_this->GetPositionImpl(pos, false);
 			bool measured = false;
+			g_air.hasMeasVz = false;
 			if (g_air.hasPrevPos && g_air.prevPosDt > 0.0005f) {
 				const float mx = (pos.x - g_air.prevPos.x) / g_air.prevPosDt;
 				const float my = (pos.y - g_air.prevPos.y) / g_air.prevPosDt;
+				const float mz = (pos.z - g_air.prevPos.z) / g_air.prevPosDt;
+				g_air.hasMeasVz = std::isfinite(mz) && std::fabs(mz) / g_cfg.unitScale < 3000.0f;
+				g_air.measVz = g_air.hasMeasVz ? mz : 0.0f;
 				// anything faster than ~75 m/s is a teleport (doors, fast travel, scripts), not movement
 				if (std::isfinite(mx) && std::isfinite(my) && std::hypot(mx, my) / g_cfg.unitScale < 3000.0f) {
 					actual.x = mx;
@@ -123,8 +127,9 @@ namespace
 			if (g_air.measuring && rawGround) {
 				g_air.measuring = false;
 				const float rise = g_air.jumpPeakZ - g_air.jumpStartZ;  // game units
-				if (!g_air.crouchJumped && rise > 10.0f && rise < 200.0f) {
-					const float hl = rise * (0.0254f * 69.99124f);
+				constexpr float kToHL = 1.0f / (0.0254f * 69.99125f);  // game units -> HL units (1 game unit = 0.5625 in)
+				if (!g_air.crouchJumped && !g_air.hlJump && rise > 10.0f && rise < 200.0f) {
+					const float hl = rise * kToHL;
 					g_air.jumpHeightHL += (hl - g_air.jumpHeightHL) * 0.3f;
 					const float takeoff = g_air.jumpTakeoffVz / g_cfg.unitScale;
 					if (takeoff > 30.0f && takeoff < 600.0f) {
@@ -133,8 +138,8 @@ namespace
 				}
 				if (g_cfg.debugLog) {
 					REX::INFO("jump: takeoff {:.2f} m/s ({:.0f} HL u/s), peak +{:.1f} game units ({:.1f} HL units), air time {:.2f} s, gravity {:.2f} m/s2{}",
-						g_air.jumpTakeoffVz, g_air.jumpTakeoffVz / g_cfg.unitScale, rise, rise * (0.0254f * 69.99124f), g_air.jumpTime,
-						g_air.gravity, g_air.crouchJumped ? " (crouch-jump)" : "");
+						g_air.jumpTakeoffVz, g_air.jumpTakeoffVz / g_cfg.unitScale, rise, rise * kToHL, g_air.jumpTime,
+						g_air.gravity, g_air.crouchJumped ? " (crouch-jump)" : g_air.hlJump ? " (Half-Life jump)" : "");
 				}
 			}
 		}
@@ -162,6 +167,9 @@ namespace
 					});
 				}
 			}
+		}
+		if (rawGround && !g_air.measuring) {
+			g_air.hlJump = false;
 		}
 		if (rawGround) {
 			g_air.crouchJumped = false;
@@ -216,6 +224,15 @@ namespace
 
 		const bool skip = externalMove || g_cfg.mode == Mode::kVanilla || menus || g_swimming.load() ||
 		                  (g_inPowerArmor.load() && !g_cfg.enableInPowerArmor) || dt <= 0.0f || dt > 0.25f;
+
+		// vertical: optional Half-Life jumping and gravity (we're in charge while you're in the air)
+		float hlVz = a_vel.z;
+		if (!skip && g_cfg.jumpPhysics != 0) {
+			hlVz = HLVertical(a_vel.z, rawGround, onGround, jumpedNow, dt);
+		} else {
+			g_air.vzOn = false;
+		}
+
 		const bool airLocked = Perks::Unlock() && g_agility.load() < 5.0f;  // unlock mode: Agility 5 for air control
 		const bool airSim = !onGround && g_cfg.airControl && !airLocked;
 		if (skip || (!onGround && !airSim)) {
@@ -223,81 +240,111 @@ namespace
 			ResetSim(a_vel);
 			g_air.airborneSim = false;
 			g_stats.outSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
+			RE::hkVector4f pass = a_vel;
+			if (g_air.vzOn) {
+				pass.z = hlVz;
+			}
+			g_air.sentVz = pass.z;
 			PrintStats();
-			return g_origSetVel(a_this, a_vel);
+			return g_origSetVel(a_this, pass);
 		}
 
-		// ---- collisions and pushes: compare what the game actually did with what we asked for last step
+		// ---- walls, slopes and pushes: compare what really happened with what we asked for last step
+		const hlmath::Vec2 act{ actual.x / g_cfg.unitScale, actual.y / g_cfg.unitScale };
+		const hlmath::Vec2 asked = g_air.lastOut;
+		const float        askedVzHL = g_air.sentVz / g_cfg.unitScale;
+		const hlmath::Vec2 simBefore = SimVel();
+		hlcore::Contact    contact = hlcore::Contact::kNone;
+		bool               hasGround = false;
+		float              gnx = 0.0f, gny = 0.0f, gnz = 1.0f;
 		{
-			const hlmath::Vec2 act{ actual.x / g_cfg.unitScale, actual.y / g_cfg.unitScale };
-			if (g_air.hasLastOut) {
-				const hlmath::Vec2 asked = g_air.lastOut;
-				const hlmath::Vec2 delta = act - asked;
-				const float        askedLen = asked.Length();
-				const float        actLen = act.Length();
-				if (delta.Length() > 5.0f) {
-					if (g_cfg.pushes && actLen > askedLen * 1.15f + g_cfg.pushThreshold) {  // 15%: step-timing slack
-						// something pushed you (hit, explosion, script): keep it as momentum, Half-Life style
-						if (g_cfg.debugLog && g_stats.detailLogs < 40) {
-							++g_stats.detailLogs;
-							REX::INFO("push: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) added ({:.0f},{:.0f})", asked.x, asked.y, act.x, act.y, delta.x, delta.y);
-						}
-						SetSimVel(SimVel() + delta);
-						g_stats.pushes++;
-					} else if (g_cfg.wallClip && askedLen > 10.0f && actLen <= askedLen * 1.15f + 5.0f) {
-						// a wall/NPC/door took part of the motion. Find the wall from the direction Havok slid
-						// you (WallNormal): small jitter in Havok's answer then can't eat your forward speed.
-						const hlmath::Vec2 normal = hlmath::WallNormal(asked, act);
-						const float        lost = 1.0f - actLen / askedLen;
-						// zero normal = you kept your direction (slope, step, Havok's own loss): not a wall
-						if (normal.Length() > 0.5f) {
-							const hlmath::Vec2 before = SimVel();
-							SetSimVel(hlmath::ClipVelocity(before, normal));
-							g_stats.clips++;
-							if (g_cfg.debugLog && g_stats.detailLogs < 40) {
-								++g_stats.detailLogs;
-								REX::INFO("clip: asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) havok says ({:.0f},{:.0f}) normal ({:.2f},{:.2f}) sim ({:.0f},{:.0f}) -> ({:.0f},{:.0f})",
-									asked.x, asked.y, act.x, act.y, reported.x / g_cfg.unitScale, reported.y / g_cfg.unitScale,
-									normal.x, normal.y, before.x, before.y, g_sim.vx, g_sim.vy);
-							}
-						} else if (g_cfg.debugLog && g_stats.detailLogs < 40) {
-							++g_stats.detailLogs;
-							REX::INFO("no wall (direction kept): asked ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) lost {:.0f}%", asked.x, asked.y, act.x, act.y, lost * 100.0f);
-						}
-					}
+			const auto& sn = a_this->supportNorm;  // the floor's direction under you, from the game
+			const float l = std::sqrt(sn.x * sn.x + sn.y * sn.y + sn.z * sn.z);
+			if (rawGround && std::isfinite(l) && l > 0.9f && l < 1.1f) {
+				hasGround = true;
+				gnx = sn.x / l;
+				gny = sn.y / l;
+				gnz = sn.z / l;
+			}
+			const float r = a_this->radius * 69.99125f;  // your body's radius, Havok -> game units
+			WallProbe::g_radiusGame = std::isfinite(r) && r > 5.0f && r < 80.0f ? r : 22.0f;
+		}
+		if (g_air.hasLastOut) {
+			hlcore::CollideInput ci;
+			ci.asked = asked;
+			ci.askedVz = g_air.sentVz / g_cfg.unitScale;
+			ci.actual = act;
+			ci.sim = simBefore;
+			ci.hasGround = hasGround;
+			ci.gnx = gnx;
+			ci.gny = gny;
+			ci.gnz = gnz;
+			ci.wallClip = g_cfg.wallClip;
+			ci.pushes = g_cfg.pushes;
+			ci.pushThreshold = g_cfg.pushThreshold;
+			auto r = hlcore::Collide(ci);
+			contact = r.kind;
+			bool probed = false;
+			if (r.kind == hlcore::Contact::kWall && g_cfg.wallProbe) {
+				// the guess says THAT there's a wall; the probe of the real surface says exactly how it faces
+				const hlmath::Vec2 n = hlcore::RefineNormal(r.normal, WallProbe::Recent());
+				if (n.x != r.normal.x || n.y != r.normal.y) {
+					r.sim = hlmath::ClipVelocity(simBefore, n);
+					r.normal = n;
+					probed = true;
 				}
+				WallProbe::Request(r.normal);
+			}
+			SetSimVel(r.sim);
+			const bool log = g_cfg.debugLog && g_stats.detailLogs < 60;
+			switch (r.kind) {
+			case hlcore::Contact::kPush:
+				g_stats.pushes++;
+				if (log) {
+					++g_stats.detailLogs;
+					REX::INFO("push: expected ({:.0f},{:.0f}) actual ({:.0f},{:.0f}) -> sim ({:.0f},{:.0f})", r.expected.x, r.expected.y, act.x, act.y, r.sim.x, r.sim.y);
+				}
+				break;
+			case hlcore::Contact::kWall:
+				g_stats.clips++;
+				if (log) {
+					++g_stats.detailLogs;
+					REX::INFO("clip: asked ({:.0f},{:.0f}) expected ({:.0f},{:.0f}){} actual ({:.0f},{:.0f}) havok says ({:.0f},{:.0f}) normal ({:.2f},{:.2f}){} sim ({:.0f},{:.0f}) -> ({:.0f},{:.0f})",
+						asked.x, asked.y, r.expected.x, r.expected.y, r.slope ? " slope" : "", act.x, act.y, reported.x / g_cfg.unitScale, reported.y / g_cfg.unitScale,
+						r.normal.x, r.normal.y, probed ? " probed" : "", simBefore.x, simBefore.y, r.sim.x, r.sim.y);
+				}
+				break;
+			case hlcore::Contact::kKept:
+				if (log) {
+					++g_stats.detailLogs;
+					REX::INFO("no wall (direction kept): expected ({:.0f},{:.0f}){} actual ({:.0f},{:.0f}) floor ({:.2f},{:.2f},{:.2f})",
+						r.expected.x, r.expected.y, r.slope ? " slope" : "", act.x, act.y, gnx, gny, gnz);
+				}
+				break;
+			default:
+				break;
 			}
 		}
 
 		float accelMult, frictionMult;
 		WeightMults(accelMult, frictionMult);
 
-		// runs a step function at the chosen smoothness: every frame, or at Half-Life's tick (+ blending)
-		auto run = [&](auto&& a_step) {
-			if (g_cfg.smoothing == 2) {
-				a_step(dt);  // every physics step, real step time: no added delay
-				return SimVel();
-			}
-			g_sim.acc += dt;
-			int steps = 0;
-			while (g_sim.acc >= g_active.tick && steps < 16) {
-				g_sim.pvx = g_sim.vx;
-				g_sim.pvy = g_sim.vy;
-				a_step(g_active.tick);
-				g_sim.acc -= g_active.tick;
-				++steps;
-			}
-			if (steps == 16) {
-				g_sim.acc = 0.0f;
-			}
-			if (g_cfg.smoothing == 1) {
-				const float t = std::clamp(g_sim.acc / g_active.tick, 0.0f, 1.0f);
-				return hlmath::Vec2{ g_sim.pvx + (g_sim.vx - g_sim.pvx) * t, g_sim.pvy + (g_sim.vy - g_sim.pvy) * t };
-			}
-			return SimVel();
-		};
+		hlcore::Params p;
+		p.friction = g_active.friction;
+		p.stopSpeed = g_active.stopSpeed;
+		p.accelerate = g_active.accelerate;
+		p.airAccelerate = g_cfg.airAccelerate;
+		p.airCap = g_cfg.airCap;
+		p.strafeAssist = g_cfg.strafeAssist;
+		p.tick = g_active.tick;
 
-		hlmath::Vec2 outV;
+		hlcore::StepInput in;
+		in.ground = onGround;
+		in.wishDir = { wish.dirX, wish.dirY };
+		in.wishSpeed = wish.speed;
+		in.stickX = wish.inX;
+		in.yawRate = g_input.yawRate;
+
 		if (!onGround) {
 			// ---- in the air: Half-Life air control, momentum kept
 			if (!g_air.airborneSim) {
@@ -322,11 +369,14 @@ namespace
 			// falling: 1.0. HL1 keeps 1.0 in the air.
 			float airSurface = 1.0f;
 			if (g_cfg.mode == Mode::kHL2 && g_cfg.hl2AirFriction != 0) {
-				const float vzHL = actual.z / g_cfg.unitScale;
-				const float threshold = g_cfg.hl2AirFriction == 1 ? 140.0f : 140.0f * (g_air.takeoffHL / 160.0f);  // 160 = HL2 jump speed
+				const float vzHL = (g_air.vzOn ? g_air.vz : actual.z) / g_cfg.unitScale;
+				// exact 140, or scaled to Fallout's takeoff speed (160 = HL2's); with exact HL jumping it's HL's own
+				const bool  exact = g_cfg.hl2AirFriction == 1 || g_cfg.jumpPhysics == 2;
+				const float threshold = exact ? 140.0f : 140.0f * (g_air.takeoffHL / 160.0f);
 				airSurface = hlmath::HL2AirSurface(vzHL, threshold);
 			}
-			outV = run([&](float a_t) { AirAccelerate(wish, a_t, airMult, airSurface); });
+			in.airAccelMult = airMult;
+			in.airSurface = airSurface;
 		} else {
 			// ---- on the ground
 			g_air.airborneSim = false;
@@ -342,16 +392,41 @@ namespace
 				}
 			}
 			const float surface = SurfaceFrictionFor(a_this->supportMaterial, waterDepth);
-			outV = run([&](float a_t) {
-				if (g_air.grace > 0.0f) {
-					g_air.grace -= a_t;
-				} else {
-					const bool edge = g_edgeAhead.load() && (g_cfg.edgeFriction == 2 || (g_cfg.edgeFriction == 1 && g_cfg.mode == Mode::kHL1));
-					Friction(a_t, frictionMult * surface * (edge ? g_cfg.edgeFrictionMult : 1.0f));
-				}
-				Accelerate(wish.dirX, wish.dirY, wish.speed, a_t, accelMult * surface);
-			});
+			const bool  edge = g_edgeAhead.load() && (g_cfg.edgeFriction == 2 || (g_cfg.edgeFriction == 1 && g_cfg.mode == Mode::kHL1));
+			in.frictionMult = frictionMult * surface * (edge ? g_cfg.edgeFrictionMult : 1.0f);
+			in.accelMult = accelMult * surface;
 		}
+
+		// run the Half-Life steps at the chosen smoothness
+		const hlmath::Vec2 stepStart = SimVel();
+		const float        graceBefore = g_air.grace;
+		hlcore::State      st{ stepStart, graceBefore };
+		hlmath::Vec2  outV;
+		if (g_cfg.smoothing == 2) {
+			hlcore::Advance(st, in, p, dt);  // this frame's time in Half-Life-sized steps, all now: no added delay
+			outV = st.vel;
+		} else {
+			g_sim.acc += dt;
+			int steps = 0;
+			while (g_sim.acc >= p.tick && steps < 16) {
+				g_sim.pvx = st.vel.x;
+				g_sim.pvy = st.vel.y;
+				hlcore::Step(st, in, p, p.tick);
+				g_sim.acc -= p.tick;
+				++steps;
+			}
+			if (steps == 16) {
+				g_sim.acc = 0.0f;
+			}
+			outV = st.vel;
+			if (g_cfg.smoothing == 1) {
+				const float t = std::clamp(g_sim.acc / p.tick, 0.0f, 1.0f);
+				outV = { g_sim.pvx + (st.vel.x - g_sim.pvx) * t, g_sim.pvy + (st.vel.y - g_sim.pvy) * t };
+			}
+		}
+		SetSimVel(st.vel);
+		g_air.grace = st.grace;
+
 		const float outX = outV.x, outY = outV.y;
 		g_air.lastOut = outV;
 		g_air.hasLastOut = true;
@@ -359,12 +434,57 @@ namespace
 		RE::hkVector4f out = a_vel;
 		out.x = outX * g_cfg.unitScale;
 		out.y = outY * g_cfg.unitScale;
-		out.z = CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
+		out.z = g_air.vzOn ? hlVz : CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
+		g_air.sentVz = out.z;
 		{
 			const float sp = std::hypot(outX, outY);
 			g_moveDirX = sp > 1.0f ? outX / sp : 0.0f;
 			g_moveDirY = sp > 1.0f ? outY / sp : 0.0f;
 		}
+
+		if (Record::g_on) {
+			Record::Row row{};
+			row.dt = dt;
+			row.rawGround = rawGround;
+			row.ground = onGround;
+			row.wishX = wish.dirX;
+			row.wishY = wish.dirY;
+			row.wishSpeed = wish.speed;
+			row.stickX = wish.inX;
+			row.stickY = wish.inY;
+			row.yawRate = g_input.yawRate;
+			row.askedX = asked.x;
+			row.askedY = asked.y;
+			row.askedVz = askedVzHL;
+			row.actX = act.x;
+			row.actY = act.y;
+			row.repX = reported.x / g_cfg.unitScale;
+			row.repY = reported.y / g_cfg.unitScale;
+			row.gnx = gnx;
+			row.gny = gny;
+			row.gnz = gnz;
+			row.hasGround = hasGround;
+			row.simBeforeX = simBefore.x;
+			row.simBeforeY = simBefore.y;
+			row.contact = static_cast<int>(contact);
+			row.simX = stepStart.x;  // start of the Half-Life steps (after walls, pushes and the jump boost)
+			row.simY = stepStart.y;
+			row.frictionMult = in.frictionMult;
+			row.accelMult = in.accelMult;
+			row.airAccelMult = in.airAccelMult;
+			row.airSurface = in.airSurface;
+			row.grace = graceBefore;
+			row.smoothing = g_cfg.smoothing;
+			row.outX = outX;
+			row.outY = outY;
+			row.inX = a_vel.x / g_cfg.unitScale;
+			row.inY = a_vel.y / g_cfg.unitScale;
+			row.inVz = a_vel.z / g_cfg.unitScale;
+			row.outVz = out.z / g_cfg.unitScale;
+			row.measVz = g_air.measVz / g_cfg.unitScale;
+			Record::Add(row);
+		}
+
 		g_stats.outSpeed = std::hypot(outX, outY);
 		PrintStats();
 		g_origSetVel(a_this, out);

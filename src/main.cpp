@@ -20,6 +20,7 @@
 #include "fo4/Camera.h"
 #include "fo4/Sounds.h"
 #include "fo4/Movement.h"
+#include "fo4/Record.h"
 #include "fo4/Hook.h"
 
 namespace
@@ -51,6 +52,9 @@ namespace
 			std::scoped_lock lock(g_simLock);  // the physics thread reads these while you move
 			LoadConfig();
 			Sounds::BuildMaterials();
+			if (g_cfg.record) {
+				Record::Start(g_cfg.recordSeconds);  // the next seconds of play go to BHOP_record.csv
+			}
 		}
 		Perks::Resolve();
 		Sounds::InstallFootstepHook();

@@ -66,6 +66,8 @@ jobs:
         run: |
           xmake build -y bhop_tests
           xmake run bhop_tests
+          xmake build -y bhop_replay
+          xmake run bhop_replay "$pwd/tests/sample_record.csv"
 
       - name: Upload mod folder
         uses: actions/upload-artifact@v4

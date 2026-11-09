@@ -1,7 +1,8 @@
-// Unit tests for src/HLMath.h. Built and run by the GitHub workflow on every push.
+// Unit tests for src/core/HLMath.h and src/core/MoveCore.h. Built and run by the GitHub workflow on every push.
 // Expected values are worked out by hand from Valve's formulas.
 
 #include "../src/core/HLMath.h"
+#include "../src/core/MoveCore.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -188,6 +189,110 @@ int main()
 		const float v = CrouchLiftSpeed(2.0f, 13.24f, 0.4572f);
 		Near((v * v - 4.0f) / (2.0f * 13.24f), 0.4572, 1e-4, "crouch lift adds exactly the lift height");
 		Near(CrouchLiftSpeed(-1.0f, 13.24f, 0.4572f), 3.4795, 1e-3, "falling slightly: lift from here");
+	}
+
+
+	// --- movement core: Half-Life-sized steps with no delay
+	{
+		hlcore::Params p;
+		p.tick = 0.01f;
+		hlcore::StepInput in;
+		in.ground = true;
+		in.wishDir = { 1.0f, 0.0f };
+		in.wishSpeed = 320.0f;
+		hlcore::State a;
+		Near(hlcore::Advance(a, in, p, 0.022f), 3.0, 1e-6, "core: a 22 ms frame is 10 + 10 + 2 ms");
+		hlcore::State b;
+		hlcore::Step(b, in, p, 0.01f);
+		hlcore::Step(b, in, p, 0.01f);
+		hlcore::Step(b, in, p, 0.002f);
+		Near(a.vel.x, b.vel.x, 1e-4, "core: same result as doing the steps by hand");
+
+		// stick air strafe: holding right and turning right at a steady 90 degrees/s. At 30 fps, split into
+		// steps that each use the view of their moment, you gain what you would at 100 fps.
+		auto gain = [&](float a_frame, bool a_split) {
+			hlcore::State s;
+			s.vel = { 0.0f, 400.0f };  // moving forward (yaw 0)
+			hlcore::StepInput air;
+			air.ground = false;
+			air.wishSpeed = 320.0f;
+			air.yawRate = 1.5707963f;
+			float yaw = 0.0f;
+			for (int i = 0; i < static_cast<int>(1.0f / a_frame + 0.5f); ++i) {
+				yaw += air.yawRate * a_frame;
+				air.wishDir = { std::cos(yaw), -std::sin(yaw) };  // right of the view
+				if (a_split) {
+					hlcore::Advance(s, air, p, a_frame);
+				} else {
+					hlcore::Step(s, air, p, a_frame);
+				}
+			}
+			return s.vel.Length() - 400.0f;
+		};
+		const double at100 = gain(0.01f, true), at30 = gain(1.0f / 30.0f, true), at30single = gain(1.0f / 30.0f, false);
+		Near(at30, at100, 0.03 * at100, "core: stick air strafe at 30 fps gains what 100 fps does (within 3%)");
+		Check(std::fabs(at30single - at100) > 0.1 * at100, "core: one big step per frame would not (why we split)", at30single, at100);
+	}
+
+	// --- walls, slopes, pushes
+	{
+		using hlcore::Contact;
+		hlcore::CollideInput c;
+		c.asked = { 300.0f, 100.0f };
+		c.actual = { 270.0f, 0.0f };  // wall at +y, and the game also shaved 10% off the slide
+		c.sim = { 300.0f, 100.0f };
+		auto r = hlcore::Collide(c);
+		Check(r.kind == Contact::kWall, "collide: wall found", static_cast<double>(r.kind), 2.0);
+		Near(r.sim.x, 300.0, 1e-3, "collide: wall slide keeps forward speed");
+		Near(r.sim.y, 0.0, 1e-3, "collide: speed into the wall removed");
+
+		c.asked = { 400.0f, 0.0f };
+		c.actual = { 0.0f, 0.0f };
+		c.sim = { 400.0f, 0.0f };
+		r = hlcore::Collide(c);
+		Near(r.sim.Length(), 0.0, 1e-3, "collide: head-on wall stops you");
+
+		c.asked = { 300.0f, 0.0f };
+		c.actual = { 300.0f, 120.0f };
+		c.sim = { 300.0f, 0.0f };
+		r = hlcore::Collide(c);
+		Check(r.kind == Contact::kPush, "collide: sideways shove is a push", static_cast<double>(r.kind), 3.0);
+		Near(r.sim.y, 120.0, 1e-3, "collide: push added to momentum");
+
+		// going diagonally up a 30 degree slope: the game bends you along the ground. Not a wall.
+		c.asked = { 300.0f, 300.0f };
+		c.askedVz = 0.0f;
+		c.hasGround = true;
+		c.gnx = -0.5f;
+		c.gny = 0.0f;
+		c.gnz = 0.8660254f;
+		const Vec2 bent = hlcore::AlongGround(c.asked, 0.0f, c.gnx, c.gny, c.gnz);
+		Near(bent.x, 225.0, 1e-2, "slope: uphill part shortened (300 - 0.5*0.5*300)");
+		c.actual = bent;
+		c.sim = c.asked;
+		r = hlcore::Collide(c);
+		Check(r.slope && r.kind == Contact::kNone, "slope: explained by the floor, not a wall", static_cast<double>(r.kind), 0.0);
+		Near(r.sim.Length(), c.asked.Length(), 1e-3, "slope: no speed taken");
+		c.hasGround = false;
+
+		// the probe's surface direction replaces the guess only when they roughly agree
+		Vec2 n = hlcore::RefineNormal({ 0.0f, 1.0f }, { 0.2f, 0.98f });
+		Near(n.x, 0.2 / std::hypot(0.2, 0.98), 1e-4, "probe: close direction is used");
+		n = hlcore::RefineNormal({ 0.0f, 1.0f }, { 1.0f, 0.0f });
+		Near(n.x, 0.0, 1e-6, "probe: a different surface is ignored");
+	}
+
+	// --- Half-Life jumping and gravity: HL1 jump with sv_gravity 800 reaches 45 units
+	{
+		float vz = hlcore::JumpSpeed(800.0f, 45.0f);
+		Near(vz, 268.33, 0.01, "jump: HL1 takeoff sqrt(2*800*45)");
+		Near(hlcore::JumpSpeed(600.0f, 21.0f), 158.75, 0.01, "jump: HL2 takeoff sqrt(2*600*21)");
+		float z = 0.0f, top = 0.0f;
+		for (int i = 0; i < 200 && (i == 0 || z > 0.0f); ++i) {
+			z += hlcore::GravityStep(vz, 800.0f, 0.01f) * 0.01f;
+			top = std::max(top, z);
+		}
+		Near(top, 45.0, 0.6, "jump: the Half-Life way of adding gravity reaches 45 units");
 	}
 
 	std::printf("\n%d failure(s)\n", g_failures);

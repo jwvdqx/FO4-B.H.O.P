@@ -2,7 +2,7 @@
 includes("lib/commonlibf4")
 
 set_project("BHOP")
-set_version("1.3.1")
+set_version("1.4.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -32,3 +32,10 @@ target("bhop_tests")
     set_kind("binary")
     set_default(false)
     add_files("tests/test_hlmath.cpp")
+
+-- Replay tool: runs the movement core on a recording from the game (BHOP_record.csv).
+--   xmake build bhop_replay && xmake run bhop_replay path/to/BHOP_record.csv
+target("bhop_replay")
+    set_kind("binary")
+    set_default(false)
+    add_files("tests/replay.cpp")
