@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.3.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.4.0)
 
 Half-Life 1 and 2 player movement and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 
@@ -10,7 +10,12 @@ Half-Life 1 and 2 player movement and sounds for Fallout 4 (runtime 1.11.240, F4
 - Walls take your speed away, like in Half-Life.
 - Fallout's walk/run/sprint speeds for now; ground only; player only.
 
-## Sounds (new in 0.2.0)
+## Camera (new in 0.4.0)
+
+- Half-Life 1 view bob, strafe roll and landing tilt (first person). "Like the game" = on in
+  HL1 mode, off in HL2 mode (HL2's camera doesn't bob), or force them on/off.
+
+## Sounds
 
 - The player's footsteps, jump and landing sounds come from Half-Life 1 or 2,
   picked by the surface under you (concrete, metal, grate, wood, dirt, grass, tile, water...).

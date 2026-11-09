@@ -42,6 +42,16 @@ namespace
 		bool enableInPowerArmor{ true };
 		bool wallClip{ true };
 		bool customGround{ false };  // false = use the selected game's friction/accelerate/stop speed
+		int  smoothing{ 2 };         // 0 = exact tick, 1 = exact tick + interpolation, 2 = every frame (most responsive)
+
+		// ---- camera (Half-Life view effects)
+		int   viewBob{ 1 };   // 0 off, 1 = like the game (HL1 on, HL2 off), 2 on
+		float bobScale{ 1.0f };
+		int   viewRoll{ 1 };  // 0 off, 1 = like the game (HL1 on, HL2 off), 2 on
+		float rollAngle{ 2.0f };
+		float rollSpeed{ 200.0f };
+		bool  landingPunch{ true };
+		float punchScale{ 1.0f };
 
 		// negative = use the mode's default
 		float friction{ -1.0f };
@@ -50,11 +60,12 @@ namespace
 		float tickRate{ -1.0f };
 
 		bool  carryWeight{ true };
-		float fullLoadAccelMult{ 0.55f };
-		float overencumberedAccelMult{ 0.40f };
-		float fullLoadFrictionMult{ 0.85f };
-		float powerArmorAccelMult{ 0.60f };
-		float powerArmorFrictionMult{ 0.80f };
+		float fullLoadAccelMult{ 0.80f };
+		float overencumberedAccelMult{ 0.60f };
+		float fullLoadFrictionMult{ 1.0f };
+		float powerArmorAccelMult{ 0.75f };
+		float powerArmorFrictionMult{ 1.0f };
+		float responsiveness{ 1.0f };  // multiplies friction and acceleration (1 = Half-Life)
 
 		// 1 Half-Life unit (1 inch) in Havok units (metres)
 		float unitScale{ 0.0254f };
@@ -166,6 +177,19 @@ namespace
 					B("bEnableInPowerArmor", g_cfg.enableInPowerArmor);
 					B("bWallClip", g_cfg.wallClip);
 					B("bCustomGround", g_cfg.customGround);
+					if (key == "iSmoothing") {
+						g_cfg.smoothing = std::clamp(std::stoi(val), 0, 2);
+					} else if (key == "iViewBob") {
+						g_cfg.viewBob = std::clamp(std::stoi(val), 0, 2);
+					} else if (key == "iViewRoll") {
+						g_cfg.viewRoll = std::clamp(std::stoi(val), 0, 2);
+					}
+					F("fResponsiveness", g_cfg.responsiveness);
+					F("fBobScale", g_cfg.bobScale);
+					F("fRollAngle", g_cfg.rollAngle);
+					F("fRollSpeed", g_cfg.rollSpeed);
+					B("bLandingPunch", g_cfg.landingPunch);
+					F("fPunchScale", g_cfg.punchScale);
 					F("fFriction", g_cfg.friction);
 					F("fAccelerate", g_cfg.accelerate);
 					F("fStopSpeed", g_cfg.stopSpeed);
@@ -219,6 +243,9 @@ namespace
 		g_active.friction = custom && g_cfg.friction >= 0.0f ? g_cfg.friction : d.friction;
 		g_active.accelerate = custom && g_cfg.accelerate >= 0.0f ? g_cfg.accelerate : d.accelerate;
 		g_active.stopSpeed = custom && g_cfg.stopSpeed >= 0.0f ? g_cfg.stopSpeed : d.stopSpeed;
+		const float resp = std::clamp(g_cfg.responsiveness, 0.25f, 4.0f);
+		g_active.friction *= resp;
+		g_active.accelerate *= resp;
 		const float rate = g_cfg.tickRate > 0.0f ? g_cfg.tickRate : d.tickRate;
 		g_active.tick = 1.0f / std::clamp(rate, 20.0f, 500.0f);
 		if (g_cfg.unitScale <= 0.0f) {
@@ -514,6 +541,163 @@ namespace
 			task->AddTask([]() { UpdateCache(); });
 		} else {
 			g_cacheQueued = false;
+		}
+	}
+
+	// =====================================================================
+	// camera: Half-Life view bob, strafe roll and landing punch
+	// =====================================================================
+	namespace Camera
+	{
+		constexpr float kHLToGame = 1.0f / (0.0254f * 69.99124f);  // 1 HL unit (inch) in game units
+
+		std::atomic<float> g_velX{ 0.0f };  // player velocity, HL units/s (written by the velocity hook)
+		std::atomic<float> g_velY{ 0.0f };
+		std::atomic_bool   g_onGround{ true };
+		std::atomic<float> g_punchKick{ 0.0f };  // new landing punch (degrees), picked up by the camera
+
+		struct State
+		{
+			std::chrono::steady_clock::time_point last{};
+			bool  hasLast{ false };
+			float bobTime{ 0.0f };
+			float bob{ 0.0f };    // HL units
+			float roll{ 0.0f };   // degrees
+			float punch{ 0.0f };  // degrees
+		} g_state;
+
+		using GetRot_t = void (*)(const void*, RE::NiQuaternion&);
+		using GetTrans_t = void (*)(const void*, RE::NiPoint3&);
+		GetRot_t    g_origRot{ nullptr };
+		GetTrans_t  g_origTrans{ nullptr };
+		const void* g_fpState{ nullptr };
+
+		bool BobOn() { return g_cfg.viewBob == 2 || (g_cfg.viewBob == 1 && g_cfg.mode == Mode::kHL1); }
+		bool RollOn() { return g_cfg.viewRoll == 2 || (g_cfg.viewRoll == 1 && g_cfg.mode == Mode::kHL1); }
+
+		bool Active(const void* a_state)
+		{
+			if (g_cfg.mode == Mode::kVanilla || a_state != g_fpState) {
+				return false;
+			}
+			auto ui = RE::UI::GetSingleton();
+			return !(ui && ui->menuMode != 0);
+		}
+
+		void OnLand(float a_fallSpeed)
+		{
+			const float threshold = g_cfg.mode == Mode::kHL1 ? 350.0f : 303.0f;  // PLAYER_FALL_PUNCH_THRESHOLD
+			if (g_cfg.landingPunch && a_fallSpeed > threshold) {
+				g_punchKick = std::min(a_fallSpeed * 0.013f, 8.0f);
+			}
+		}
+
+		// once per frame (the game asks for rotation and position separately)
+		void Step()
+		{
+			const auto now = std::chrono::steady_clock::now();
+			float      dt = g_state.hasLast ? std::chrono::duration<float>(now - g_state.last).count() : 0.0f;
+			if (g_state.hasLast && dt < 0.002f) {
+				return;
+			}
+			g_state.last = now;
+			g_state.hasLast = true;
+			dt = std::clamp(dt, 0.0f, 0.1f);
+
+			const float vx = g_velX.load();
+			const float vy = g_velY.load();
+			const float speed = std::hypot(vx, vy);
+
+			// V_CalcBob: cl_bob 0.01, cl_bobcycle 0.8, cl_bobup 0.5
+			g_state.bobTime += dt;
+			if (BobOn() && g_onGround.load()) {
+				constexpr float kCycle = 0.8f, kUp = 0.5f, kPi = 3.14159265f;
+				float cycle = std::fmod(g_state.bobTime, kCycle) / kCycle;
+				cycle = cycle < kUp ? kPi * cycle / kUp : kPi + kPi * (cycle - kUp) / (1.0f - kUp);
+				float bob = speed * 0.01f;
+				bob = bob * 0.3f + bob * 0.7f * std::sin(cycle);
+				g_state.bob = std::clamp(bob, -7.0f, 4.0f);
+			} else if (!BobOn()) {
+				g_state.bob = 0.0f;
+			}
+
+			// V_CalcRoll: cl_rollangle 2, cl_rollspeed 200
+			g_state.roll = 0.0f;
+			if (RollOn()) {
+				auto player = RE::PlayerCharacter::GetSingleton();
+				if (player) {
+					const float yaw = player->data.angle.z;
+					const float side = vx * std::cos(yaw) - vy * std::sin(yaw);  // speed to the right
+					const float a = std::fabs(side);
+					const float r = a < g_cfg.rollSpeed ? a * g_cfg.rollAngle / std::max(g_cfg.rollSpeed, 1.0f) : g_cfg.rollAngle;
+					g_state.roll = side < 0.0f ? -r : r;
+				}
+			}
+
+			// landing punch, PM_DropPunchAngle decay
+			if (const float kick = g_punchKick.exchange(0.0f); kick > 0.0f) {
+				g_state.punch = kick * g_cfg.punchScale;
+			}
+			if (g_state.punch > 0.0f) {
+				g_state.punch = std::max(0.0f, g_state.punch - (10.0f + g_state.punch * 0.5f) * dt);
+			}
+		}
+
+		void HookedGetTranslation(const void* a_this, RE::NiPoint3& a_out)
+		{
+			g_origTrans(a_this, a_out);
+			if (!Active(a_this)) {
+				return;
+			}
+			Step();
+			a_out.z += g_state.bob * g_cfg.bobScale * kHLToGame;
+		}
+
+		void HookedGetRotation(const void* a_this, RE::NiQuaternion& a_out)
+		{
+			g_origRot(a_this, a_out);
+			if (!Active(a_this)) {
+				return;
+			}
+			Step();
+			const float deg = g_state.roll + g_state.punch;
+			if (std::fabs(deg) < 0.001f) {
+				return;
+			}
+			// roll around the camera's own forward axis (local Y)
+			const float h = deg * 3.14159265f / 180.0f * 0.5f;
+			const float s = std::sin(h), c = std::cos(h);
+			const RE::NiQuaternion q = a_out;  // (w, x, y, z)
+			const float bw = c, bx = 0.0f, by = s, bz = 0.0f;
+			a_out.w = q.w * bw - q.x * bx - q.y * by - q.z * bz;
+			a_out.x = q.w * bx + q.x * bw + q.y * bz - q.z * by;
+			a_out.y = q.w * by - q.x * bz + q.y * bw + q.z * bx;
+			a_out.z = q.w * bz + q.x * by - q.y * bx + q.z * bw;
+		}
+
+		void Install()
+		{
+			auto cam = RE::PlayerCamera::GetSingleton();
+			if (!cam) {
+				return;
+			}
+			auto state = cam->cameraStates[RE::CameraStates::kFirstPerson].get();
+			if (!state) {
+				return;
+			}
+			g_fpState = state;
+			auto vtbl = *reinterpret_cast<std::uintptr_t* const*>(state);
+			const auto rotMine = reinterpret_cast<std::uintptr_t>(&HookedGetRotation);
+			const auto transMine = reinterpret_cast<std::uintptr_t>(&HookedGetTranslation);
+			if (vtbl[0x0C] != rotMine) {
+				g_origRot = reinterpret_cast<GetRot_t>(vtbl[0x0C]);
+				REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 0x0C), rotMine);
+			}
+			if (vtbl[0x0D] != transMine) {
+				g_origTrans = reinterpret_cast<GetTrans_t>(vtbl[0x0D]);
+				REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 0x0D), transMine);
+			}
+			REX::INFO("Camera hooked (first person state {:X})", reinterpret_cast<std::uintptr_t>(state));
 		}
 	}
 
@@ -884,6 +1068,7 @@ namespace
 				}
 				if (!g_step.prevGround && a_onGround) {
 					const float fall = g_step.maxFall;
+					Camera::OnLand(fall);
 					float       vol = 0.0f;
 					if (fall >= g_cfg.landHardSpeed) {
 						vol = 1.0f;
@@ -1055,6 +1240,8 @@ namespace
 		float vx{ 0.0f };  // Half-Life units / s
 		float vy{ 0.0f };
 		float acc{ 0.0f };  // leftover time for the fixed tick
+		float pvx{ 0.0f };  // velocity at the previous tick (for interpolation)
+		float pvy{ 0.0f };
 		std::chrono::steady_clock::time_point last{};
 		bool  hasLast{ false };
 	} g_sim;
@@ -1141,8 +1328,8 @@ namespace
 
 	void ResetSim(const RE::hkVector4f& a_vanilla)
 	{
-		g_sim.vx = a_vanilla.x / g_cfg.unitScale;
-		g_sim.vy = a_vanilla.y / g_cfg.unitScale;
+		g_sim.vx = g_sim.pvx = a_vanilla.x / g_cfg.unitScale;
+		g_sim.vy = g_sim.pvy = a_vanilla.y / g_cfg.unitScale;
 		g_sim.acc = 0.0f;
 	}
 
@@ -1205,6 +1392,9 @@ namespace
 		}
 
 		Sounds::Update(a_this, dt, onGround, actual, menus);
+		Camera::g_velX = actual.x / g_cfg.unitScale;
+		Camera::g_velY = actual.y / g_cfg.unitScale;
+		Camera::g_onGround = onGround;
 
 		g_stats.wishSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
 
@@ -1239,22 +1429,42 @@ namespace
 		WeightMults(accelMult, frictionMult);
 		const float surfaceFriction = 1.0f;  // stage 2: per material
 
-		g_sim.acc += dt;
-		int steps = 0;
-		while (g_sim.acc >= g_active.tick && steps < 16) {
-			Friction(g_active.tick, frictionMult * surfaceFriction);
-			Accelerate(dirX, dirY, wishSpeed, g_active.tick, accelMult * surfaceFriction);
-			g_sim.acc -= g_active.tick;
-			++steps;
-		}
-		if (steps == 16) {
-			g_sim.acc = 0.0f;
+		float outX = 0.0f, outY = 0.0f;
+		if (g_cfg.smoothing == 2) {
+			// every physics step, with the real step time: no added delay
+			Friction(dt, frictionMult * surfaceFriction);
+			Accelerate(dirX, dirY, wishSpeed, dt, accelMult * surfaceFriction);
+			outX = g_sim.vx;
+			outY = g_sim.vy;
+		} else {
+			g_sim.acc += dt;
+			int steps = 0;
+			while (g_sim.acc >= g_active.tick && steps < 16) {
+				g_sim.pvx = g_sim.vx;
+				g_sim.pvy = g_sim.vy;
+				Friction(g_active.tick, frictionMult * surfaceFriction);
+				Accelerate(dirX, dirY, wishSpeed, g_active.tick, accelMult * surfaceFriction);
+				g_sim.acc -= g_active.tick;
+				++steps;
+			}
+			if (steps == 16) {
+				g_sim.acc = 0.0f;
+			}
+			if (g_cfg.smoothing == 1) {
+				// blend between the last two ticks so speed changes smoothly between frames
+				const float t = std::clamp(g_sim.acc / g_active.tick, 0.0f, 1.0f);
+				outX = g_sim.pvx + (g_sim.vx - g_sim.pvx) * t;
+				outY = g_sim.pvy + (g_sim.vy - g_sim.pvy) * t;
+			} else {
+				outX = g_sim.vx;
+				outY = g_sim.vy;
+			}
 		}
 
 		RE::hkVector4f out = a_vel;
-		out.x = g_sim.vx * g_cfg.unitScale;
-		out.y = g_sim.vy * g_cfg.unitScale;
-		g_stats.outSpeed = std::hypot(g_sim.vx, g_sim.vy);
+		out.x = outX * g_cfg.unitScale;
+		out.y = outY * g_cfg.unitScale;
+		g_stats.outSpeed = std::hypot(outX, outY);
 		PrintStats();
 		g_origSetVel(a_this, out);
 	}
@@ -1338,6 +1548,9 @@ namespace
 				Sounds::OnGameLoaded();
 			}
 			ScheduleInstall(600);
+			if (auto task = F4SE::GetTaskInterface()) {
+				task->AddTask([]() { Camera::Install(); });
+			}
 			break;
 		default:
 			break;

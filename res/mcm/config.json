@@ -8,44 +8,41 @@
       "type": "text"
     },
     {
-      "text": "Half-Life 1 and 2 player movement and sounds.",
+      "text": "Half-Life 1 and 2 player movement, camera and sounds.",
+      "type": "text"
+    },
+    {
+      "text": " ",
+      "type": "text"
+    },
+    {
+      "text": "General: movement mode and the sound switch.",
+      "type": "text"
+    },
+    {
+      "text": "Movement: grip, ground values and weight.",
+      "type": "text"
+    },
+    {
+      "text": "Camera: view bob, strafe roll, landing tilt.",
+      "type": "text"
+    },
+    {
+      "text": "Sounds: footstep details and volume.",
+      "type": "text"
+    },
+    {
+      "text": " ",
       "type": "text"
     },
     {
       "text": "Changes apply when you close the menu.",
       "type": "text"
-    },
-    {
-      "text": "Quick settings",
-      "type": "section"
-    },
-    {
-      "id": "iMode:General",
-      "text": "Movement",
-      "type": "dropdown",
-      "help": "Vanilla Fallout 4, Half-Life 1 or Half-Life 2 movement for the player.",
-      "valueOptions": {
-        "options": [
-          "Vanilla",
-          "Half-Life 1",
-          "Half-Life 2"
-        ],
-        "sourceType": "ModSettingInt"
-      }
-    },
-    {
-      "id": "bHalfLifeSounds:Sounds",
-      "text": "Half-Life sounds",
-      "type": "switcher",
-      "help": "Half-Life footsteps, jump and landing sounds for the player.",
-      "valueOptions": {
-        "sourceType": "ModSettingBool"
-      }
     }
   ],
   "pages": [
     {
-      "pageDisplayName": "Movement",
+      "pageDisplayName": "General",
       "content": [
         {
           "text": "Mode",
@@ -61,6 +58,47 @@
               "Vanilla",
               "Half-Life 1",
               "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "bHalfLifeSounds:Sounds",
+          "text": "Half-Life sounds",
+          "type": "switcher",
+          "help": "Half-Life footsteps, jump and landing sounds for the player.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iSoundSet:Sounds",
+          "text": "Sound set",
+          "type": "dropdown",
+          "help": "Follow movement: HL1 mode uses HL1 sounds, HL2 mode uses HL2 sounds. Or always use one set (also works with Vanilla movement).",
+          "valueOptions": {
+            "options": [
+              "Follow movement",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "text": "Feel",
+          "type": "section"
+        },
+        {
+          "id": "iSmoothing:General",
+          "text": "Smoothness",
+          "type": "dropdown",
+          "help": "Every frame: smoothest, no delay (recommended). Exact tick: Half-Life's own tick rate, can feel steppy at 40-60 fps. Exact tick + smoothing: smooth, up to one tick of delay.",
+          "valueOptions": {
+            "options": [
+              "Exact tick",
+              "Exact tick + smoothing",
+              "Every frame"
             ],
             "sourceType": "ModSettingInt"
           }
@@ -82,16 +120,37 @@
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Movement",
+      "content": [
+        {
+          "text": "Grip",
+          "type": "section"
         },
         {
-          "text": "Ground",
+          "id": "fResponsiveness:Ground",
+          "text": "Responsiveness",
+          "type": "slider",
+          "help": "Multiplies friction and acceleration. 1.0 = exact Half-Life. Higher = snappier, less sliding. Lower = more floaty.",
+          "valueOptions": {
+            "min": 0.5,
+            "max": 3,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Custom ground values",
           "type": "section"
         },
         {
           "id": "bCustomGround:Ground",
           "text": "Use custom values",
           "type": "switcher",
-          "help": "Off: use the selected game's own values (friction 4, accelerate 10, stop speed 100).",
+          "help": "Off: the selected game's own values (friction 4, accelerate 10, stop speed 100).",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -124,28 +183,23 @@
           "id": "fStopSpeed:Ground",
           "text": "Stop speed",
           "type": "slider",
-          "help": "Below this speed friction brings you to a stop faster. Half-Life: 100.",
+          "help": "Below this speed you come to a stop faster. Half-Life: 100.",
           "valueOptions": {
             "min": 0,
             "max": 300,
             "step": 5,
             "sourceType": "ModSettingFloat"
           }
-        }
-      ]
-    },
-    {
-      "pageDisplayName": "Weight",
-      "content": [
+        },
         {
-          "text": "Carry weight",
+          "text": "Weight",
           "type": "section"
         },
         {
           "id": "bCarryWeightAffectsMovement:Weight",
           "text": "Carry weight affects movement",
           "type": "switcher",
-          "help": "The fuller your inventory, the slower you start, turn and stop.",
+          "help": "The fuller your inventory, the slower you start and turn.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -178,17 +232,13 @@
           "id": "fFullLoadFrictionMult:Weight",
           "text": "Friction at full load",
           "type": "slider",
-          "help": "Lower = slide a little more when stopping.",
+          "help": "Lower = slide more when stopping. 1.0 = no change.",
           "valueOptions": {
             "min": 0.1,
             "max": 1,
             "step": 0.05,
             "sourceType": "ModSettingFloat"
           }
-        },
-        {
-          "text": "Power Armor",
-          "type": "section"
         },
         {
           "id": "fPowerArmorAccelMult:Weight",
@@ -217,34 +267,113 @@
       ]
     },
     {
-      "pageDisplayName": "Sounds",
+      "pageDisplayName": "Camera",
       "content": [
         {
-          "text": "Half-Life sounds",
+          "text": "View bob",
           "type": "section"
         },
         {
-          "id": "bHalfLifeSounds:Sounds",
-          "text": "Half-Life sounds",
+          "id": "iViewBob:Camera",
+          "text": "View bob",
+          "type": "dropdown",
+          "help": "Half-Life 1's up-and-down camera bob while moving. Like the game: on in HL1 mode, off in HL2 mode.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "Like the game",
+              "Always on"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "fBobScale:Camera",
+          "text": "Bob strength",
+          "type": "slider",
+          "help": "1.0 = Half-Life 1.",
+          "valueOptions": {
+            "min": 0,
+            "max": 3,
+            "step": 0.1,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Strafe roll",
+          "type": "section"
+        },
+        {
+          "id": "iViewRoll:Camera",
+          "text": "Strafe roll",
+          "type": "dropdown",
+          "help": "The camera tilts a little when you strafe, like Half-Life 1. Like the game: on in HL1 mode, off in HL2 mode.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "Like the game",
+              "Always on"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "fRollAngle:Camera",
+          "text": "Roll angle",
+          "type": "slider",
+          "help": "Degrees. Half-Life 1: 2.",
+          "valueOptions": {
+            "min": 0,
+            "max": 8,
+            "step": 0.5,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fRollSpeed:Camera",
+          "text": "Full roll at speed",
+          "type": "slider",
+          "help": "Strafe speed (HL units/s) for the full angle. Half-Life 1: 200.",
+          "valueOptions": {
+            "min": 50,
+            "max": 400,
+            "step": 10,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Landing",
+          "type": "section"
+        },
+        {
+          "id": "bLandingPunch:Camera",
+          "text": "Landing tilt",
           "type": "switcher",
-          "help": "Half-Life footsteps, jump and landing sounds for the player.",
+          "help": "The camera tilts on hard landings, like Half-Life.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
         },
         {
-          "id": "iSoundSet:Sounds",
-          "text": "Sound set",
-          "type": "dropdown",
-          "help": "Follow movement: HL1 mode uses HL1 sounds, HL2 mode uses HL2 sounds, Vanilla has none. Or pick one to always use.",
+          "id": "fPunchScale:Camera",
+          "text": "Landing tilt strength",
+          "type": "slider",
+          "help": "1.0 = Half-Life.",
           "valueOptions": {
-            "options": [
-              "Follow movement",
-              "Half-Life 1",
-              "Half-Life 2"
-            ],
-            "sourceType": "ModSettingInt"
+            "min": 0,
+            "max": 3,
+            "step": 0.1,
+            "sourceType": "ModSettingFloat"
           }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Sounds",
+      "content": [
+        {
+          "text": "Footsteps",
+          "type": "section"
         },
         {
           "id": "bMuteVanillaPlayerFootsteps:Sounds",
@@ -304,7 +433,7 @@
           "id": "bUseVanillaReverb:Sounds",
           "text": "Use footstep reverb",
           "type": "switcher",
-          "help": "Half-Life sounds get the same reverb and distance as vanilla footsteps (including reverb mods). Turn off if sounds misbehave.",
+          "help": "Same reverb and distance as vanilla footsteps (including reverb mods). Turn off if sounds misbehave.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -369,7 +498,7 @@
           "id": "fRunStepSpeed:Sounds",
           "text": "Running steps from speed",
           "type": "slider",
-          "help": "Speed (Half-Life units/s) where steps switch to running. Half-Life: 220.",
+          "help": "Speed (HL units/s) where steps switch to running. Half-Life: 220.",
           "valueOptions": {
             "min": 50,
             "max": 320,
