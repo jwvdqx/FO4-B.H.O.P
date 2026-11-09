@@ -16,11 +16,15 @@
       "type": "text"
     },
     {
-      "text": "General: movement mode and the sound switch.",
+      "text": "General: mode, sounds, smoothness, input and speeds.",
       "type": "text"
     },
     {
-      "text": "Movement: grip, ground values and weight.",
+      "text": "Movement: grip, surfaces and weight.",
+      "type": "text"
+    },
+    {
+      "text": "Air & Bunnyhop: air strafing and bunnyhopping.",
       "type": "text"
     },
     {
@@ -29,6 +33,10 @@
     },
     {
       "text": "Sounds: footstep details and volume.",
+      "type": "text"
+    },
+    {
+      "text": "Perks: how vanilla perks join in.",
       "type": "text"
     },
     {
@@ -104,6 +112,41 @@
           }
         },
         {
+          "id": "bDirectInput:General",
+          "text": "Direct stick input",
+          "type": "switcher",
+          "help": "Reads the stick directly instead of waiting for Fallout's own speed-up and slow-down. Much less input delay. First person only.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iSpeedMode:General",
+          "text": "Speeds",
+          "type": "dropdown",
+          "help": "Fallout's own walk/run/sprint speeds, or Half-Life's (HL2: walk 150, run 190, sprint 320; HL1: run 320).",
+          "valueOptions": {
+            "options": [
+              "Fallout",
+              "Half-Life"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iHL1Sprint:General",
+          "text": "Sprint in Half-Life 1",
+          "type": "dropdown",
+          "help": "With Half-Life speeds in HL1 mode: Half-Life 1 has no sprint. Choose whether the sprint key still makes you faster.",
+          "valueOptions": {
+            "options": [
+              "Does nothing",
+              "Faster"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
           "id": "bEnableInPowerArmor:General",
           "text": "Half-Life movement in Power Armor",
           "type": "switcher",
@@ -138,6 +181,31 @@
           "valueOptions": {
             "min": 0.5,
             "max": 3,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Surfaces",
+          "type": "section"
+        },
+        {
+          "id": "bSurfaceFriction:Ground",
+          "text": "Surface grip",
+          "type": "switcher",
+          "help": "Surfaces change grip like in Source: ice slides, mud and snow drag, water slows you.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fSurfaceFrictionStrength:Ground",
+          "text": "Surface grip strength",
+          "type": "slider",
+          "help": "0 = no effect, 1 = full effect.",
+          "valueOptions": {
+            "min": 0,
+            "max": 1,
             "step": 0.05,
             "sourceType": "ModSettingFloat"
           }
@@ -262,6 +330,100 @@
             "max": 1,
             "step": 0.05,
             "sourceType": "ModSettingFloat"
+          }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Air & Bunnyhop",
+      "content": [
+        {
+          "text": "Air",
+          "type": "section"
+        },
+        {
+          "id": "bAirControl:Air",
+          "text": "Half-Life air control",
+          "type": "switcher",
+          "help": "Momentum is kept in the air and you can air strafe: hold left or right and turn the same way.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fAirAccelerate:Air",
+          "text": "Air acceleration",
+          "type": "slider",
+          "help": "How much air strafing can steer and gain. Half-Life: 10.",
+          "valueOptions": {
+            "min": 1,
+            "max": 30,
+            "step": 0.5,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fStrafeAssist:Air",
+          "text": "Strafe assist (for sticks)",
+          "type": "slider",
+          "help": "When you strafe and turn the same way, aims the strafe at the best angle. 0 = pure Half-Life, 1 = full help.",
+          "valueOptions": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Bunnyhop",
+          "type": "section"
+        },
+        {
+          "id": "bBunnyhop:Air",
+          "text": "Bunnyhop",
+          "type": "switcher",
+          "help": "Jump again right after landing and friction doesn't slow you down.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fBhopGrace:Air",
+          "text": "Bunnyhop timing window",
+          "type": "slider",
+          "help": "Seconds after landing before friction starts. Half-Life: one frame.",
+          "valueOptions": {
+            "min": 0,
+            "max": 0.3,
+            "step": 0.01,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "bHL1BhopCap:Air",
+          "text": "HL1 bunnyhop speed cap",
+          "type": "switcher",
+          "help": "Half-Life 1 mode: jumping above 1.7x max speed cuts your speed, like HL1.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bHL2JumpBoost:Air",
+          "text": "HL2 jump boost",
+          "type": "switcher",
+          "help": "Half-Life 2 mode: the small forward speed boost when you jump.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bHL2ABH:Air",
+          "text": "HL2 back-hopping (ABH)",
+          "type": "switcher",
+          "help": "Half-Life 2 mode: keep the jump boost's famous backwards quirk.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
           }
         }
       ]
@@ -529,6 +691,53 @@
             "step": 0.05,
             "sourceType": "ModSettingFloat"
           }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Perks",
+      "content": [
+        {
+          "text": "Vanilla perks",
+          "type": "section"
+        },
+        {
+          "id": "iPerkMode:Perks",
+          "text": "Perks",
+          "type": "dropdown",
+          "help": "Bonus: everything works, perks make it better. Unlock: air control needs Agility 5, bunnyhop needs Moving Target 1, ABH needs Moving Target 3.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "Bonus",
+              "Unlock"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "text": "Moving Target: faster sprint (+4% per rank).",
+          "type": "text"
+        },
+        {
+          "text": "Strong Back: weight slows you less (20% per rank).",
+          "type": "text"
+        },
+        {
+          "text": "Adamantium Skeleton: softer landing tilt.",
+          "type": "text"
+        },
+        {
+          "text": "Aquaboy / Aquagirl: no water drag.",
+          "type": "text"
+        },
+        {
+          "text": "Sneak: quieter Half-Life steps while sneaking.",
+          "type": "text"
+        },
+        {
+          "text": "Agility: better air control.",
+          "type": "text"
         }
       ]
     },

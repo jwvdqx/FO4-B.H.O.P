@@ -1,55 +1,55 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.4.1)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.0.0)
 
-Half-Life 1 and 2 player movement and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
+Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
+Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
 
-## Movement (stage 1)
+## Movement
 
-- Half-Life ground acceleration and friction (friction 4, accelerate 10, stop speed 100) at
-  Half-Life's tick rate (HL1: 100/s, HL2: 66.67/s).
-- Weight: fuller inventory = slower to start, turn and stop. Power Armor heavier still.
-- Walls take your speed away, like in Half-Life.
-- Fallout's walk/run/sprint speeds for now; ground only; player only.
+- **Direct stick input**: the stick is read directly, so Fallout's own slow speed-up/slow-down is skipped
+  (first person). Fallout still decides when you may move (dialogue, scenes).
+- Half-Life ground friction and acceleration, run every frame by default for the smoothest, delay-free feel
+  (exact HL tick rate available). **Responsiveness** slider for more or less grip.
+- **Speeds**: Fallout's own, or Half-Life's (HL2: walk 150, run 190, sprint 320 using Fallout's AP drain;
+  HL1: run 320, sprint optional).
+- **Surfaces**: ice slides, mud/snow/sand drag, water slows you (Source-style surface friction).
+- **Weight**: carry weight and Power Armor slow your starts and turns.
+- Walls take your speed away. Short "airborne" moments on stairs count as ground.
+- Uses the game's own physics step time, so VATS slow-motion and time changes stay in sync.
 
-## Camera (new in 0.4.0)
+## Air and bunnyhopping
 
-- Half-Life 1 view bob, strafe roll and landing tilt (first person). "Like the game" = on in
-  HL1 mode, off in HL2 mode (HL2's camera doesn't bob), or force them on/off.
+- Half-Life air control: momentum kept in the air, air strafing (hold left/right and turn the same way),
+  with an optional **strafe assist** for sticks.
+- Bunnyhop: jump again right after landing and friction doesn't slow you. HL1's bunnyhop cap and HL2's jump
+  boost (with its ABH quirk) are included and can be turned off.
+
+## Camera (first person)
+
+- Half-Life 1 view bob, strafe roll and landing tilt. "Like the game" = on in HL1 mode, off in HL2 mode.
 
 ## Sounds
 
-- The player's footsteps, jump and landing sounds come from Half-Life 1 or 2,
-  picked by the surface under you (concrete, metal, grate, wood, dirt, grass, tile, water...).
-- Timed like Half-Life: a step every 0.3 s running, 0.4 s walking, quieter when walking/sneaking,
-  left/right foot pattern, floor sound at full volume when you jump and land.
-- The player's vanilla footsteps are muted while it's on. NPC footsteps (and mods like
-  Project Reality Footsteps) are left alone.
-- Our sounds reuse the vanilla footstep "output model", so they get the same reverb and
-  distance settings as normal footsteps, including changes from reverb mods.
-- Toggle: Mod Config -> B.H.O.P. -> Sounds (or `bHalfLifeSounds`).
+- Half-Life 1/2 footsteps, jump and landing sounds by surface, timed like Half-Life; vanilla player footsteps
+  muted (NPCs untouched). Same reverb as vanilla footsteps (works with reverb mods). Sounds follow you.
 
-## Settings (MCM)
+## Perks
 
-Pause menu -> Mod Config -> **B.H.O.P.**: movement mode, Power Armor, ground values, weight,
-sounds, volume and timing. Changes apply when you close the menu.
-Defaults: `Data\MCM\Config\BHOP\settings.ini`. Your changes: `Data\MCM\Settings\BHOP.ini`.
-Surface overrides (`Material.<name>=<sound>`) can be added to either file.
-
-## Build
-
-Every push to this repo is built by GitHub Actions (Actions tab).
-Download the **BHOP** artifact.
+- Bonus mode (default): Moving Target = faster sprint, Strong Back = weight slows you less, Adamantium Skeleton =
+  softer landing tilt, Aquaboy/Aquagirl = no water drag, Sneak = quieter steps, Agility = better air control.
+- Unlock mode: air control needs Agility 5, bunnyhop needs Moving Target 1, ABH needs Moving Target 3.
 
 ## Install
 
-- Install the release zip with your mod manager (or extract into `Fallout 4\`). It contains
-  `Data\F4SE\Plugins\BHOP.dll` and `Data\MCM\Config\BHOP\`. Requires F4SE, Address Library and MCM.
-- The sounds zip -> extract into `Fallout 4\` so you get
-  `Data\Sound\FX\BHOP\HL1\` and `...\HL2\` (keep them as loose files, not in a BA2).
+- Install the release zip with your mod manager (or extract into `Fallout 4\`).
+  Requires F4SE, Address Library for F4SE Plugins and MCM.
+- Half-Life sound files are not included: put your own copy in `Data\Sound\FX\BHOP\HL1\` and `...\HL2\`
+  as loose files.
+- Updating from an older version: delete `Data\MCM\Settings\BHOP.ini` once so new defaults apply.
 
-The sound files are Valve's, from your own copy of the games. Keep them for personal use and
-don't include them if you ever upload the mod.
+## Build
 
-## Test
+Every push is built by GitHub Actions. Publishing a release attaches the mod zip automatically.
 
-Walk, run, sneak and jump on different floors (concrete, metal, wood, dirt, water), then send
-`Documents\My Games\Fallout4\F4SE\BHOP.log`.
+## Logs
+
+`Documents\My Games\Fallout4\F4SE\BHOP.log` (MCM -> Debug -> Debug log).

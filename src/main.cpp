@@ -67,6 +67,31 @@ namespace
 		float powerArmorFrictionMult{ 1.0f };
 		float responsiveness{ 1.0f };  // multiplies friction and acceleration (1 = Half-Life)
 
+		// ---- input + speeds
+		bool  directInput{ true };   // read the stick directly (skips Fallout's own speed ramp)
+		int   speedMode{ 0 };        // 0 = Fallout speeds, 1 = Half-Life speeds
+		int   hl1Sprint{ 0 };        // HL1 speeds: 0 = sprint key does nothing, 1 = sprint is faster
+		float hl1SprintMult{ 1.35f };
+		float hlPowerArmorSpeedMult{ 0.85f };
+
+		// ---- air + bunnyhop
+		bool  airControl{ true };
+		float airAccelerate{ 10.0f };  // sv_airaccelerate
+		float airCap{ 30.0f };         // Half-Life caps air wish speed at 30
+		float strafeAssist{ 0.5f };    // 0 = pure Half-Life, 1 = full help for sticks
+		bool  bhop{ true };
+		float bhopGrace{ 0.10f };      // seconds after landing without friction
+		bool  hl1BhopCap{ true };
+		bool  hl2JumpBoost{ true };
+		bool  hl2ABH{ true };
+
+		// ---- surfaces
+		bool  surfaceFriction{ true };
+		float surfaceStrength{ 1.0f };
+
+		// ---- perks: 0 off, 1 bonus, 2 unlock
+		int   perkMode{ 1 };
+
 		// 1 Half-Life unit (1 inch) in Havok units (metres)
 		float unitScale{ 0.0254f };
 
@@ -185,6 +210,27 @@ namespace
 						g_cfg.viewRoll = std::clamp(std::stoi(val), 0, 2);
 					}
 					F("fResponsiveness", g_cfg.responsiveness);
+					B("bDirectInput", g_cfg.directInput);
+					if (key == "iSpeedMode") {
+						g_cfg.speedMode = std::clamp(std::stoi(val), 0, 1);
+					} else if (key == "iHL1Sprint") {
+						g_cfg.hl1Sprint = std::clamp(std::stoi(val), 0, 1);
+					} else if (key == "iPerkMode") {
+						g_cfg.perkMode = std::clamp(std::stoi(val), 0, 2);
+					}
+					F("fHL1SprintMult", g_cfg.hl1SprintMult);
+					F("fHLPowerArmorSpeedMult", g_cfg.hlPowerArmorSpeedMult);
+					B("bAirControl", g_cfg.airControl);
+					F("fAirAccelerate", g_cfg.airAccelerate);
+					F("fAirSpeedCap", g_cfg.airCap);
+					F("fStrafeAssist", g_cfg.strafeAssist);
+					B("bBunnyhop", g_cfg.bhop);
+					F("fBhopGrace", g_cfg.bhopGrace);
+					B("bHL1BhopCap", g_cfg.hl1BhopCap);
+					B("bHL2JumpBoost", g_cfg.hl2JumpBoost);
+					B("bHL2ABH", g_cfg.hl2ABH);
+					B("bSurfaceFriction", g_cfg.surfaceFriction);
+					F("fSurfaceFrictionStrength", g_cfg.surfaceStrength);
 					F("fBobScale", g_cfg.bobScale);
 					F("fRollAngle", g_cfg.rollAngle);
 					F("fRollSpeed", g_cfg.rollSpeed);
@@ -549,6 +595,62 @@ namespace
 	std::atomic_bool       g_cacheQueued{ false };
 	std::atomic<long long> g_lastCacheRequest{ 0 };
 
+	std::atomic<float> g_agility{ 5.0f };
+	std::atomic<float> g_speedMult{ 1.0f };
+	std::atomic_bool   g_firstPerson{ true };
+
+	namespace Perks
+	{
+		std::vector<RE::BGSPerk*> g_list[5];  // moving target, strong back, adamantium skeleton, aquaboy/girl, sneak
+		std::atomic<int>          g_rank[5]{};
+		enum : int { kMovingTarget, kStrongBack, kAdamantium, kAquaboy, kSneak };
+
+		void Resolve()
+		{
+			for (auto& l : g_list) {
+				l.clear();
+			}
+			auto dh = RE::TESDataHandler::GetSingleton();
+			if (!dh) {
+				return;
+			}
+			for (auto perk : dh->GetFormArray<RE::BGSPerk>()) {
+				if (!perk) {
+					continue;
+				}
+				const auto name = Lower(std::string(RE::TESFullName::GetFullName(*perk)));
+				int        idx = -1;
+				if (name == "moving target") idx = kMovingTarget;
+				else if (name == "strong back") idx = kStrongBack;
+				else if (name == "adamantium skeleton") idx = kAdamantium;
+				else if (name == "aquaboy" || name == "aquagirl") idx = kAquaboy;
+				else if (name == "sneak") idx = kSneak;
+				if (idx >= 0) {
+					g_list[idx].push_back(perk);
+				}
+			}
+			REX::INFO("Perks found: Moving Target {}, Strong Back {}, Adamantium Skeleton {}, Aquaboy {}, Sneak {}",
+				g_list[0].size(), g_list[1].size(), g_list[2].size(), g_list[3].size(), g_list[4].size());
+		}
+
+		void Update(RE::PlayerCharacter* a_player)
+		{
+			for (int i = 0; i < 5; ++i) {
+				int r = 0;
+				for (auto p : g_list[i]) {
+					if (a_player->GetPerkRank(p) > 0) {
+						++r;
+					}
+				}
+				g_rank[i] = r;
+			}
+		}
+
+		int Rank(int a_idx) { return g_cfg.perkMode == 0 ? 0 : g_rank[a_idx].load(); }
+		bool Bonus() { return g_cfg.perkMode != 0; }
+		bool Unlock() { return g_cfg.perkMode == 2; }
+	}
+
 	void UpdateCache()
 	{
 		g_cacheQueued = false;
@@ -559,6 +661,21 @@ namespace
 		g_inPowerArmor = RE::PowerArmor::PlayerInPowerArmor();
 		g_swimming = player->ActorState::IsSwimming();
 		g_sneaking = player->IsSneaking();
+		if (auto avs = RE::ActorValue::GetSingleton()) {
+			auto owner = static_cast<RE::ActorValueOwner*>(player);
+			if (avs->agility) {
+				g_agility = owner->GetActorValue(*avs->agility);
+			}
+			if (avs->speedMult) {
+				g_speedMult = std::clamp(owner->GetActorValue(*avs->speedMult) / 100.0f, 0.1f, 5.0f);
+			}
+		}
+		if (auto cam = RE::PlayerCamera::GetSingleton()) {
+			auto cur = cam->currentState.get();
+			g_firstPerson = cur && (cur == cam->cameraStates[RE::CameraStates::kFirstPerson].get() ||
+			                           cur == cam->cameraStates[RE::CameraStates::kIronSights].get());
+		}
+		Perks::Update(player);
 
 		float load = 0.0f;
 		if (auto avs = RE::ActorValue::GetSingleton(); avs && avs->carryWeight) {
@@ -574,7 +691,7 @@ namespace
 	void RequestCacheUpdate()
 	{
 		const auto now = NowMs();
-		if (now - g_lastCacheRequest.load() < 100 || g_cacheQueued.exchange(true)) {
+		if (now - g_lastCacheRequest.load() < 50 || g_cacheQueued.exchange(true)) {
 			return;
 		}
 		g_lastCacheRequest = now;
@@ -629,7 +746,11 @@ namespace
 		{
 			const float threshold = g_cfg.mode == Mode::kHL1 ? 350.0f : 303.0f;  // PLAYER_FALL_PUNCH_THRESHOLD
 			if (g_cfg.landingPunch && a_fallSpeed > threshold) {
-				g_punchKick = std::min(a_fallSpeed * 0.013f, 8.0f);
+				float kick = std::min(a_fallSpeed * 0.013f, 8.0f);
+				if (Perks::Bonus()) {
+					kick *= std::max(0.0f, 1.0f - 0.25f * static_cast<float>(Perks::Rank(Perks::kAdamantium)));  // Adamantium Skeleton
+				}
+				g_punchKick = kick;
 			}
 		}
 
@@ -768,7 +889,8 @@ namespace
 					{ "duct", "pl_duct" }, { "wood", "pl_step" }, { "woodpanel", "pl_step" }, { "grass", "pl_dirt" },
 					{ "gravel", "pl_dirt" }, { "mud", "pl_dirt" }, { "sand", "pl_dirt" }, { "snow", "pl_dirt" },
 					{ "dirt", "pl_dirt" }, { "tile", "pl_tile" }, { "slosh", "pl_slosh" }, { "wade", "pl_wade" },
-					{ "ladder", "pl_ladder" }, { "carpet", "pl_step" }, { "swim", "pl_swim" }, { "powerarmor", "pl_metal" }
+					{ "ladder", "pl_ladder" }, { "carpet", "pl_step" }, { "swim", "pl_swim" }, { "powerarmor", "pl_metal" },
+					{ "ice", "pl_tile" }, { "glass", "pl_tile" }
 				};
 				auto it = m.find(a_cat);
 				return it != m.end() ? it->second : "pl_step";
@@ -778,7 +900,8 @@ namespace
 				{ "duct", "duct" }, { "wood", "wood" }, { "woodpanel", "woodpanel" }, { "grass", "grass" },
 				{ "gravel", "gravel" }, { "mud", "mud" }, { "sand", "sand" }, { "snow", "gravel" },
 				{ "dirt", "dirt" }, { "tile", "tile" }, { "slosh", "slosh" }, { "wade", "wade" },
-				{ "ladder", "ladder" }, { "carpet", "softshoe_generic" }, { "swim", "wade" }, { "powerarmor", "hardboot_generic" }
+				{ "ladder", "ladder" }, { "carpet", "softshoe_generic" }, { "swim", "wade" }, { "powerarmor", "hardboot_generic" },
+				{ "ice", "tile" }, { "glass", "tile" }
 			};
 			auto it = m.find(a_cat);
 			return it != m.end() ? it->second : "concrete";
@@ -797,9 +920,11 @@ namespace
 			if (has("gravel")) return "gravel";
 			if (has("mud")) return "mud";
 			if (has("sand")) return "sand";
-			if (has("snow") || has("ice")) return "snow";
+			if (a_lower == "ice" || has("materialice") || has("iceslick")) return "ice";
+			if (has("snow")) return "snow";
 			if (has("dirt") || has("soil") || has("earth")) return "dirt";
-			if (has("tile") || has("ceramic") || has("porcelain") || has("glass") || has("marble")) return "tile";
+			if (has("glass")) return "glass";
+			if (has("tile") || has("ceramic") || has("porcelain") || has("marble")) return "tile";
 			if (has("water")) return "slosh";
 			if (has("carpet") || has("rug") || has("cloth") || has("fabric") || has("mattress")) return "carpet";
 			if (has("concrete") || has("stone") || has("rock") || has("asphalt") || has("brick")) return "concrete";
@@ -1165,6 +1290,9 @@ namespace
 			if (g_sneaking.load()) {
 				vol *= g_cfg.sneakVolumeMult;
 				interval += g_cfg.sneakExtraInterval;
+				if (Perks::Bonus()) {
+					vol *= std::max(0.3f, 1.0f - 0.1f * static_cast<float>(Perks::Rank(Perks::kSneak)));  // Sneak: quieter steps
+				}
 			}
 			g_step.timer = interval;
 
@@ -1357,6 +1485,11 @@ namespace
 				a_friction = 1.0f + (g_cfg.fullLoadFrictionMult - 1.0f) * t;
 			}
 		}
+		if (Perks::Bonus()) {
+			const float keep = std::max(0.0f, 1.0f - 0.2f * static_cast<float>(Perks::Rank(Perks::kStrongBack)));  // Strong Back
+			a_accel = 1.0f - (1.0f - a_accel) * keep;
+			a_friction = 1.0f - (1.0f - a_friction) * keep;
+		}
 		if (g_inPowerArmor.load()) {
 			a_accel *= g_cfg.powerArmorAccelMult;
 			a_friction *= g_cfg.powerArmorFrictionMult;
@@ -1397,12 +1530,276 @@ namespace
 			return;
 		}
 		g_stats.lastPrint = now;
-		REX::INFO("[1s] calls {} ground {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {}",
+		REX::INFO("[1s] calls {} ground {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {}",
 			g_stats.calls, g_stats.groundCalls, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed,
-			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load());
+			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load());
 		g_stats.calls = 0;
 		g_stats.groundCalls = 0;
 	}
+
+	// ---------------------------------------------------------------------
+	// surfaces (Source multiplies friction AND acceleration by the surface)
+	// ---------------------------------------------------------------------
+	float SurfaceFrictionFor(std::uint32_t a_material, float a_waterDepth)
+	{
+		if (!g_cfg.surfaceFriction) {
+			return 1.0f;
+		}
+		float f = 1.0f;
+		if (a_waterDepth > 1.0f && a_waterDepth < 200.0f) {
+			f = Perks::Bonus() && Perks::Rank(Perks::kAquaboy) > 0 ? 1.0f : 0.8f;  // water drags you
+		} else {
+			auto it = Sounds::g_materialCat.find(a_material);
+			const std::string& cat = it != Sounds::g_materialCat.end() ? it->second : std::string();
+			if (cat == "ice") f = 0.15f;
+			else if (cat == "snow") f = 0.70f;
+			else if (cat == "mud") f = 0.75f;
+			else if (cat == "sand") f = 0.85f;
+			else if (cat == "gravel") f = 0.90f;
+			else if (cat == "glass") f = 0.65f;
+			else if (cat == "tile") f = 0.90f;
+			else if (cat == "grass") f = 0.95f;
+		}
+		return 1.0f + (f - 1.0f) * std::clamp(g_cfg.surfaceStrength, 0.0f, 1.0f);
+	}
+
+	// ---------------------------------------------------------------------
+	// input: what the player wants, straight from the stick
+	// ---------------------------------------------------------------------
+	enum class MoveClass { kWalk, kRun, kSprint, kSneak };
+
+	struct Wish
+	{
+		float     dirX{ 0.0f }, dirY{ 0.0f };
+		float     speed{ 0.0f };  // HL units/s
+		float     inX{ 0.0f }, inY{ 0.0f };  // stick: x = right, y = forward
+		float     mag{ 0.0f };
+		MoveClass cls{ MoveClass::kRun };
+	};
+
+	struct InputState
+	{
+		float learned[4]{ 80.0f, 210.0f, 281.0f, 110.0f };  // Fallout's own top speeds, learned while you play
+		float heldTime{ 0.0f };
+		MoveClass lastClass{ MoveClass::kRun };
+		float blocked{ 0.0f };
+		float prevYaw{ 0.0f };
+		bool  hasYaw{ false };
+		float yawRate{ 0.0f };  // radians/s, positive = turning right
+	} g_input;
+
+	float ClassSpeed(MoveClass a_cls, bool a_sprinting)
+	{
+		float speed = 0.0f;
+		if (g_cfg.speedMode == 1) {
+			const bool hl1 = g_cfg.mode == Mode::kHL1;
+			const float run = hl1 ? 320.0f : 190.0f;
+			const float walk = hl1 ? 320.0f * 0.52f : 150.0f;
+			switch (a_cls) {
+			case MoveClass::kWalk: speed = walk; break;
+			case MoveClass::kSprint: speed = hl1 ? (g_cfg.hl1Sprint == 1 ? run * g_cfg.hl1SprintMult : run) : 320.0f; break;
+			case MoveClass::kSneak: speed = run * 0.3333f; break;
+			default: speed = run; break;
+			}
+			speed *= g_speedMult.load();
+			if (g_inPowerArmor.load()) {
+				speed *= g_cfg.hlPowerArmorSpeedMult;
+			}
+		} else {
+			speed = g_input.learned[static_cast<int>(a_cls)];
+		}
+		if (a_sprinting && Perks::Bonus()) {
+			speed *= 1.0f + 0.04f * static_cast<float>(Perks::Rank(Perks::kMovingTarget));  // Moving Target
+		}
+		return speed;
+	}
+
+	Wish ReadWish(const RE::hkVector4f& a_vanilla, float a_dt)
+	{
+		Wish w;
+		auto player = RE::PlayerCharacter::GetSingleton();
+		auto controls = RE::PlayerControls::GetSingleton();
+		const float vanX = a_vanilla.x / g_cfg.unitScale;
+		const float vanY = a_vanilla.y / g_cfg.unitScale;
+		const float vanSpeed = std::hypot(vanX, vanY);
+
+		const bool sprinting = player && player->DoGetSprinting();
+		const bool running = controls ? controls->data.running : true;
+		w.cls = g_sneaking.load() ? MoveClass::kSneak : sprinting ? MoveClass::kSprint : running ? MoveClass::kRun : MoveClass::kWalk;
+
+		if (controls) {
+			w.inX = std::clamp(controls->data.moveInputVec.x, -1.0f, 1.0f);
+			w.inY = std::clamp(controls->data.moveInputVec.y, -1.0f, 1.0f);
+		}
+		if (controls && controls->data.autoMove && std::fabs(w.inY) < 0.05f) {
+			w.inY = 1.0f;  // Fallout's auto-move
+		}
+		w.mag = std::min(1.0f, std::hypot(w.inX, w.inY));
+
+		// yaw and how fast you're turning (used by the air strafe assist)
+		const float yaw = player ? player->data.angle.z : 0.0f;
+		if (g_input.hasYaw && a_dt > 0.0f) {
+			float d = yaw - g_input.prevYaw;
+			while (d > 3.14159265f) d -= 6.2831853f;
+			while (d < -3.14159265f) d += 6.2831853f;
+			g_input.yawRate = d / a_dt;
+		}
+		g_input.prevYaw = yaw;
+		g_input.hasYaw = true;
+
+		// learn Fallout's own top speed for this kind of movement (used with Fallout speeds)
+		if (w.cls == g_input.lastClass && w.mag > 0.95f && vanSpeed > 1.0f) {
+			g_input.heldTime += a_dt;
+			if (g_input.heldTime > 0.5f) {
+				auto& l = g_input.learned[static_cast<int>(w.cls)];
+				l += (vanSpeed - l) * std::min(1.0f, a_dt * 2.0f);
+			}
+		} else {
+			g_input.heldTime = 0.0f;
+		}
+		g_input.lastClass = w.cls;
+
+		const bool direct = g_cfg.directInput && g_firstPerson.load();
+		if (direct) {
+			// Fallout still decides WHEN you may move: if it wants you still while you push the stick
+			// (dialogue, scripted scenes...), respect that after a moment.
+			if (vanSpeed < 1.0f && w.mag > 0.2f) {
+				g_input.blocked += a_dt;
+			} else {
+				g_input.blocked = 0.0f;
+			}
+			if (w.mag < 0.05f || g_input.blocked > 0.25f) {
+				return w;  // speed 0
+			}
+			const float fx = std::sin(yaw), fy = std::cos(yaw);   // forward
+			const float rx = std::cos(yaw), ry = -std::sin(yaw);  // right
+			float dx = fx * w.inY + rx * w.inX;
+			float dy = fy * w.inY + ry * w.inX;
+			const float len = std::hypot(dx, dy);
+			if (len < 0.001f) {
+				return w;
+			}
+			w.dirX = dx / len;
+			w.dirY = dy / len;
+			w.speed = ClassSpeed(w.cls, sprinting) * w.mag;
+		} else {
+			// third person: Fallout's direction (it turns the body), our speed
+			if (vanSpeed < 0.5f) {
+				return w;
+			}
+			w.dirX = vanX / vanSpeed;
+			w.dirY = vanY / vanSpeed;
+			w.speed = g_cfg.speedMode == 1 ? ClassSpeed(w.cls, sprinting) * std::max(w.mag, 0.3f) : vanSpeed;
+		}
+		return w;
+	}
+
+	// ---------------------------------------------------------------------
+	// Half-Life air acceleration (PM_AirAccelerate) + optional stick assist
+	// ---------------------------------------------------------------------
+	void AirAccelerate(const Wish& a_wish, float a_dt, float a_accelMult)
+	{
+		if (a_wish.speed <= 0.0f) {
+			return;
+		}
+		float dirX = a_wish.dirX, dirY = a_wish.dirY;
+		const float speed = std::hypot(g_sim.vx, g_sim.vy);
+		const float cap = g_cfg.airCap;
+		const float accel = g_cfg.airAccelerate * a_accelMult;
+		const float accelSpeedMax = accel * a_wish.speed * a_dt;
+
+		// Stick assist: when you strafe and turn the same way (the Half-Life technique),
+		// steer the wish direction toward the angle that gains the most speed.
+		const float assist = std::clamp(g_cfg.strafeAssist, 0.0f, 1.0f);
+		if (assist > 0.0f && speed > cap && std::fabs(a_wish.inX) > 0.3f && a_wish.inX * g_input.yawRate > 0.2f) {
+			const float vx = g_sim.vx / speed, vy = g_sim.vy / speed;
+			const float cross = vx * dirY - vy * dirX;  // which side of the velocity the wish is on
+			const float side = cross >= 0.0f ? 1.0f : -1.0f;
+			const float c = std::clamp((cap - std::min(accelSpeedMax, cap)) / speed, 0.0f, 1.0f);
+			const float th = std::acos(c);
+			const float cs = std::cos(th), sn = std::sin(th) * side;
+			const float ox = vx * cs - vy * sn, oy = vx * sn + vy * cs;  // velocity rotated by th
+			dirX = dirX + (ox - dirX) * assist;
+			dirY = dirY + (oy - dirY) * assist;
+			const float l = std::hypot(dirX, dirY);
+			if (l > 0.001f) {
+				dirX /= l;
+				dirY /= l;
+			}
+		}
+
+		const float wishspd = std::min(a_wish.speed, cap);
+		const float current = g_sim.vx * dirX + g_sim.vy * dirY;
+		const float add = wishspd - current;
+		if (add <= 0.0f) {
+			return;
+		}
+		const float accelSpeed = std::min(accelSpeedMax, add);
+		g_sim.vx += accelSpeed * dirX;
+		g_sim.vy += accelSpeed * dirY;
+	}
+
+	// ---------------------------------------------------------------------
+	// jumping: HL1 bunnyhop cap / HL2 forward boost (and its ABH quirk)
+	// ---------------------------------------------------------------------
+	void OnJump(const Wish& a_wish)
+	{
+		const float speed = std::hypot(g_sim.vx, g_sim.vy);
+		const float maxSpeed = std::max(ClassSpeed(a_wish.cls == MoveClass::kSprint ? MoveClass::kSprint : MoveClass::kRun, false), 1.0f);
+		if (g_cfg.mode == Mode::kHL1) {
+			// PM_PreventMegaBunnyJumping
+			if (g_cfg.hl1BhopCap && speed > 1.7f * maxSpeed) {
+				const float fraction = (1.7f * maxSpeed / speed) * 0.65f;
+				g_sim.vx *= fraction;
+				g_sim.vy *= fraction;
+			}
+			return;
+		}
+		if (!g_cfg.hl2JumpBoost) {
+			return;
+		}
+		// CHL2GameMovement::CheckJumpButton
+		auto player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			return;
+		}
+		const float yaw = player->data.angle.z;
+		const float fx = std::sin(yaw), fy = std::cos(yaw);
+		const bool  sprintOrDuck = a_wish.cls == MoveClass::kSprint || a_wish.cls == MoveClass::kSneak;
+		const float perc = sprintOrDuck ? 0.1f : 0.5f;
+		const float forwardMove = a_wish.inY * ClassSpeed(a_wish.cls, false);
+		float       addition = std::fabs(forwardMove * perc);
+		const float maxSp = maxSpeed + maxSpeed * perc;
+		const float newSpeed = addition + speed;
+		if (newSpeed > maxSp) {
+			addition -= newSpeed - maxSp;
+		}
+		if (forwardMove < 0.0f) {
+			addition *= -1.0f;
+		}
+		const bool abhAllowed = g_cfg.hl2ABH && !(Perks::Unlock() && Perks::Rank(Perks::kMovingTarget) < 3);
+		const float oldSpeed = speed;
+		g_sim.vx += fx * addition;
+		g_sim.vy += fy * addition;
+		if (!abhAllowed) {
+			const float s2 = std::hypot(g_sim.vx, g_sim.vy);
+			const float limit = std::max(oldSpeed, maxSp);
+			if (s2 > limit && s2 > 0.0f) {
+				g_sim.vx *= limit / s2;
+				g_sim.vy *= limit / s2;
+			}
+		}
+	}
+
+	struct AirState
+	{
+		bool  prevGround{ true };
+		bool  prevRawGround{ true };
+		float airTime{ 0.0f };
+		bool  jumpedThisAir{ false };
+		float grace{ 0.0f };
+		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
+	} g_air;
 
 	void HookedSetLinearVelocity(RE::bhkCharacterController* a_this, const RE::hkVector4f& a_vel)
 	{
@@ -1422,8 +1819,14 @@ namespace
 		g_sim.last = now;
 		g_sim.hasLast = true;
 
+		const float wallDt = dt;
+		const float stepDt = a_this->stepInfo.m_deltaTime.val();
+		if (stepDt > 0.0005f && stepDt < 0.25f) {
+			dt = stepDt;  // the game's own step time: follows VATS slow-motion and other time changes
+		}
+
 		const int  state = static_cast<int>(a_this->context.m_currentState);
-		const bool onGround = a_this->context.m_currentState == RE::hknpCharacterState::hknpCharacterStateType::kOnGround;
+		const bool rawGround = a_this->context.m_currentState == RE::hknpCharacterState::hknpCharacterStateType::kOnGround;
 
 		RE::hkVector4f actual;
 		a_this->GetLinearVelocityImpl(actual);
@@ -1431,19 +1834,36 @@ namespace
 		auto       ui = RE::UI::GetSingleton();
 		const bool menus = ui && ui->menuMode != 0;
 
+		// Stairs and bumps make the game report "in the air" for a moment. Unless you jumped,
+		// short moments like that still count as ground, so you keep full control and friction.
+		const bool jumpedNow = g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f;
+		g_air.prevRawGround = rawGround;
+		if (rawGround) {
+			g_air.airTime = 0.0f;
+		} else {
+			g_air.airTime += dt;
+			if (jumpedNow) {
+				g_air.jumpedThisAir = true;
+			}
+		}
+		const bool onGround = rawGround || (!g_air.jumpedThisAir && g_air.airTime < 0.12f);
+
+		float waterDepth = 0.0f;
+		if (auto player = RE::PlayerCharacter::GetSingleton()) {
+			const float wh = a_this->waterHeight;
+			waterDepth = (wh > -1.0e6f && wh < 1.0e6f) ? wh - player->data.location.z : 0.0f;
+		}
+
 		g_stats.calls++;
 		g_stats.state = state;
 		g_stats.material = a_this->supportMaterial;
 		g_stats.actualSpeed = std::hypot(actual.x, actual.y) / g_cfg.unitScale;
-		if (auto player = RE::PlayerCharacter::GetSingleton()) {
-			const float wh = a_this->waterHeight;
-			g_stats.water = (wh > -1.0e6f && wh < 1.0e6f) ? wh - player->data.location.z : 0.0f;
-		}
+		g_stats.water = waterDepth;
 
 		if (g_cfg.debugLog && g_stats.firstCalls < 10) {
 			g_stats.firstCalls++;
-			REX::INFO("call {}: dt {:.4f} state {} in ({:.3f}, {:.3f}, {:.3f}) actual ({:.3f}, {:.3f}, {:.3f}) flags {:08X}",
-				g_stats.firstCalls, dt, state, a_vel.x, a_vel.y, a_vel.z, actual.x, actual.y, actual.z, a_this->flags);
+			REX::INFO("call {}: dt {:.4f} (clock {:.4f}) state {} in ({:.3f}, {:.3f}, {:.3f}) actual ({:.3f}, {:.3f}, {:.3f}) flags {:08X}",
+				g_stats.firstCalls, dt, wallDt, state, a_vel.x, a_vel.y, a_vel.z, actual.x, actual.y, actual.z, a_this->flags);
 		}
 
 		Sounds::Update(a_this, dt, onGround, actual, menus);
@@ -1451,18 +1871,27 @@ namespace
 		Camera::g_velY = actual.y / g_cfg.unitScale;
 		Camera::g_onGround = onGround;
 
-		g_stats.wishSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
+		const Wish wish = ReadWish(a_vel, dt);
+		g_stats.wishSpeed = wish.speed;
 
-		const bool skip = g_cfg.mode == Mode::kVanilla || !onGround || menus || g_swimming.load() ||
+		const bool jumped = jumpedNow;
+		const bool landed = !g_air.prevGround && onGround && g_air.jumpedThisAir;  // landing from a real jump
+		g_air.prevGround = onGround;
+		if (rawGround) {
+			g_air.jumpedThisAir = false;
+		}
+
+		const bool skip = g_cfg.mode == Mode::kVanilla || menus || g_swimming.load() ||
 		                  (g_inPowerArmor.load() && !g_cfg.enableInPowerArmor) || dt <= 0.0f || dt > 0.25f;
-		if (skip) {
+		const bool airLocked = Perks::Unlock() && g_agility.load() < 5.0f;  // unlock mode: Agility 5 for air control
+		const bool airSim = !onGround && g_cfg.airControl && !airLocked;
+		if (skip || (!onGround && !airSim)) {
 			ResetSim(a_vel);
-			g_stats.outSpeed = g_stats.wishSpeed;
+			g_air.airborneSim = false;
+			g_stats.outSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
 			PrintStats();
 			return g_origSetVel(a_this, a_vel);
 		}
-
-		g_stats.groundCalls++;
 
 		// Something (a wall, an NPC, a door) took speed away: keep that loss, like HL's velocity clipping.
 		if (g_cfg.wallClip) {
@@ -1473,46 +1902,70 @@ namespace
 			}
 		}
 
-		// Fallout's wanted velocity = Half-Life's wish velocity
-		const float wishX = a_vel.x / g_cfg.unitScale;
-		const float wishY = a_vel.y / g_cfg.unitScale;
-		const float wishSpeed = std::hypot(wishX, wishY);
-		const float dirX = wishSpeed > 0.001f ? wishX / wishSpeed : 0.0f;
-		const float dirY = wishSpeed > 0.001f ? wishY / wishSpeed : 0.0f;
-
 		float accelMult, frictionMult;
 		WeightMults(accelMult, frictionMult);
-		const float surfaceFriction = 1.0f;  // stage 2: per material
 
 		float outX = 0.0f, outY = 0.0f;
-		if (g_cfg.smoothing == 2) {
-			// every physics step, with the real step time: no added delay
-			Friction(dt, frictionMult * surfaceFriction);
-			Accelerate(dirX, dirY, wishSpeed, dt, accelMult * surfaceFriction);
+		if (!onGround) {
+			// ---- in the air: Half-Life air control, momentum kept
+			if (!g_air.airborneSim) {
+				g_air.airborneSim = true;  // just left the ground: carry our ground velocity into the air
+			}
+			if (jumped) {
+				OnJump(wish);
+			}
+			float airMult = 1.0f;
+			if (Perks::Bonus()) {
+				airMult *= std::clamp(1.0f + (g_agility.load() - 5.0f) * 0.04f, 0.8f, 1.25f);  // Agility
+			}
+			AirAccelerate(wish, dt, airMult);
 			outX = g_sim.vx;
 			outY = g_sim.vy;
+			g_sim.pvx = g_sim.vx;
+			g_sim.pvy = g_sim.vy;
+			g_sim.acc = 0.0f;
 		} else {
-			g_sim.acc += dt;
-			int steps = 0;
-			while (g_sim.acc >= g_active.tick && steps < 16) {
-				g_sim.pvx = g_sim.vx;
-				g_sim.pvy = g_sim.vy;
-				Friction(g_active.tick, frictionMult * surfaceFriction);
-				Accelerate(dirX, dirY, wishSpeed, g_active.tick, accelMult * surfaceFriction);
-				g_sim.acc -= g_active.tick;
-				++steps;
+			// ---- on the ground
+			g_air.airborneSim = false;
+			g_stats.groundCalls++;
+			const bool bhopAllowed = g_cfg.bhop && !(Perks::Unlock() && Perks::Rank(Perks::kMovingTarget) < 1);
+			if (landed && bhopAllowed) {
+				g_air.grace = g_cfg.bhopGrace;  // jump again in time and friction never touches you
 			}
-			if (steps == 16) {
-				g_sim.acc = 0.0f;
-			}
-			if (g_cfg.smoothing == 1) {
-				// blend between the last two ticks so speed changes smoothly between frames
-				const float t = std::clamp(g_sim.acc / g_active.tick, 0.0f, 1.0f);
-				outX = g_sim.pvx + (g_sim.vx - g_sim.pvx) * t;
-				outY = g_sim.pvy + (g_sim.vy - g_sim.pvy) * t;
-			} else {
+			const float surface = SurfaceFrictionFor(a_this->supportMaterial, waterDepth);
+			auto step = [&](float a_t) {
+				if (g_air.grace > 0.0f) {
+					g_air.grace -= a_t;
+				} else {
+					Friction(a_t, frictionMult * surface);
+				}
+				Accelerate(wish.dirX, wish.dirY, wish.speed, a_t, accelMult * surface);
+			};
+			if (g_cfg.smoothing == 2) {
+				step(dt);  // every physics step, real step time: no added delay
 				outX = g_sim.vx;
 				outY = g_sim.vy;
+			} else {
+				g_sim.acc += dt;
+				int steps = 0;
+				while (g_sim.acc >= g_active.tick && steps < 16) {
+					g_sim.pvx = g_sim.vx;
+					g_sim.pvy = g_sim.vy;
+					step(g_active.tick);
+					g_sim.acc -= g_active.tick;
+					++steps;
+				}
+				if (steps == 16) {
+					g_sim.acc = 0.0f;
+				}
+				if (g_cfg.smoothing == 1) {
+					const float t = std::clamp(g_sim.acc / g_active.tick, 0.0f, 1.0f);
+					outX = g_sim.pvx + (g_sim.vx - g_sim.pvx) * t;
+					outY = g_sim.pvy + (g_sim.vy - g_sim.pvy) * t;
+				} else {
+					outX = g_sim.vx;
+					outY = g_sim.vy;
+				}
 			}
 		}
 
@@ -1590,6 +2043,7 @@ namespace
 	{
 		switch (a_msg->type) {
 		case F4SE::MessagingInterface::kGameDataReady:
+			Perks::Resolve();
 			Sounds::Init();
 			if (auto ui = RE::UI::GetSingleton()) {
 				ui->RegisterSink<RE::MenuOpenCloseEvent>(&g_menuSink);
