@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.4.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.4.1)
 
 Half-Life 1 and 2 player movement and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 

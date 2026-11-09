@@ -491,11 +491,52 @@ namespace
 				continue;
 			}
 			const std::string_view name(reinterpret_cast<const char*>(td + 16));
-			if (name.find(a_baseSubstr) != std::string_view::npos) {
+			// a_baseSubstr may hold several parts separated by '|'; all must be in the name
+			bool        all = true;
+			std::size_t start = 0;
+			while (start <= a_baseSubstr.size()) {
+				const auto end = a_baseSubstr.find('|', start);
+				const auto part = a_baseSubstr.substr(start, end == std::string_view::npos ? std::string_view::npos : end - start);
+				if (!part.empty() && name.find(part) == std::string_view::npos) {
+					all = false;
+					break;
+				}
+				if (end == std::string_view::npos) {
+					break;
+				}
+				start = end + 1;
+			}
+			if (all) {
 				return static_cast<std::int32_t>(b[2]);  // mdisp
 			}
 		}
 		return -1;
+	}
+
+	// Writes every base class of a class to the log (for finding things on new game versions).
+	void LogBases(std::uint32_t a_classDescRva)
+	{
+		const auto& g = Game();
+		const auto  chd = g.base + a_classDescRva;
+		if (!g.Contains(chd, 16)) {
+			return;
+		}
+		const auto num = reinterpret_cast<const std::uint32_t*>(chd)[2];
+		const auto arr = g.base + reinterpret_cast<const std::uint32_t*>(chd)[3];
+		for (std::uint32_t i = 0; i < num && i < 64; ++i) {
+			if (!g.Contains(arr + i * 4, 4)) {
+				break;
+			}
+			const auto bcd = g.base + reinterpret_cast<const std::uint32_t*>(arr)[i];
+			if (!g.Contains(bcd, 28)) {
+				continue;
+			}
+			const auto* b = reinterpret_cast<const std::uint32_t*>(bcd);
+			const auto  td = g.base + b[0];
+			if (g.Contains(td + 16, 4)) {
+				REX::INFO("  base {} at +{:X}", reinterpret_cast<const char*>(td + 16), static_cast<std::int32_t>(b[2]));
+			}
+		}
 	}
 
 	// =====================================================================
@@ -765,6 +806,8 @@ namespace
 			return {};
 		}
 
+		bool g_loggedMaterials{ false };
+
 		void BuildMaterials()
 		{
 			g_materialCat.clear();
@@ -800,10 +843,11 @@ namespace
 					cat = "concrete";
 				}
 				g_materialCat[matt->materialID] = cat;
-				if (g_cfg.debugLog) {
+				if (g_cfg.debugLog && !g_loggedMaterials) {
 					REX::INFO("Material {:08X} '{}' -> {}", matt->materialID, firstName, cat);
 				}
 			}
+			g_loggedMaterials = true;
 		}
 
 		void BuildGroups()
@@ -1200,7 +1244,7 @@ namespace
 				return;
 			}
 			for (auto& v : vtables) {
-				const auto off = BaseOffset(v.classDescRva, "BSTEventSink@VBGSFootstepEvent");
+				const auto off = BaseOffset(v.classDescRva, "BSTEventSink@|BGSFootstepEvent@@");
 				if (off >= 0 && static_cast<std::uint32_t>(off) == v.subobjectOffset) {
 					auto* slot = reinterpret_cast<std::uintptr_t*>(v.vtbl) + 1;  // ProcessEvent
 					g_origFootstep = reinterpret_cast<ProcessEvent_t>(*slot);
@@ -1210,6 +1254,10 @@ namespace
 				}
 			}
 			REX::WARN("Footstep listener not found in {} BGSImpactManager vtables; vanilla player footsteps will still play", vtables.size());
+			for (auto& v : vtables) {
+				REX::INFO(" vtable +{:X}, part at +{:X}:", v.vtbl - Game().base, v.subobjectOffset);
+			}
+			LogBases(vtables.front().classDescRva);
 		}
 
 		void Init()
@@ -1382,7 +1430,8 @@ namespace
 		g_stats.material = a_this->supportMaterial;
 		g_stats.actualSpeed = std::hypot(actual.x, actual.y) / g_cfg.unitScale;
 		if (auto player = RE::PlayerCharacter::GetSingleton()) {
-			g_stats.water = a_this->waterHeight - player->data.location.z;
+			const float wh = a_this->waterHeight;
+			g_stats.water = (wh > -1.0e6f && wh < 1.0e6f) ? wh - player->data.location.z : 0.0f;
 		}
 
 		if (g_cfg.debugLog && g_stats.firstCalls < 10) {
