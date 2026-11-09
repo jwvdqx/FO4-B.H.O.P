@@ -250,7 +250,7 @@ namespace
 		}
 
 		// ---- walls, slopes and pushes: compare what really happened with what we asked for last step
-		const hlmath::Vec2 act{ actual.x / g_cfg.unitScale, actual.y / g_cfg.unitScale };
+		hlmath::Vec2       act{ actual.x / g_cfg.unitScale, actual.y / g_cfg.unitScale };
 		const hlmath::Vec2 asked = g_air.lastOut;
 		const float        askedVzHL = g_air.sentVz / g_cfg.unitScale;
 		const hlmath::Vec2 simBefore = SimVel();
@@ -269,6 +269,25 @@ namespace
 			const float r = a_this->radius * 69.99125f;  // your body's radius, Havok -> game units
 			WallProbe::g_radiusGame = std::isfinite(r) && r > 5.0f && r < 80.0f ? r : 22.0f;
 		}
+		// Self-check of the measurement: walking straight on flat ground, you should move exactly as fast as
+		// we asked. If the game's step timing ever made the measurement read high or low, this learns the
+		// factor and corrects it, so it can't turn into fake pushes (runaway speed) or fake walls.
+		if (g_stats.measured) {
+			const float al = asked.Length();
+			if (g_air.hasLastOut && rawGround && hasGround && gnz > 0.99f && al > 80.0f) {
+				const hlmath::Vec2 ad = asked * (1.0f / al);
+				const float        along = act.Dot(ad);
+				if (along > 0.0f && (act - ad * along).Length() < 0.035f * al) {
+					const float ratio = along / al;
+					if (ratio > 0.2f && ratio < 5.0f) {
+						g_air.measScale += (ratio - g_air.measScale) * std::min(1.0f, dt * 0.5f);
+					}
+				}
+			}
+			g_air.measScale = std::clamp(g_air.measScale, 0.5f, 2.0f);
+			act = act * (1.0f / g_air.measScale);
+		}
+		g_stats.measScale = g_air.measScale;
 		if (g_air.hasLastOut) {
 			hlcore::CollideInput ci;
 			ci.asked = asked;
@@ -283,6 +302,18 @@ namespace
 			ci.pushes = g_cfg.pushes;
 			ci.pushThreshold = g_cfg.pushThreshold;
 			auto r = hlcore::Collide(ci);
+			// Real pushes are one-off shoves. A "push" on two steps in a row means the measurement is off
+			// (it would feed on itself and run your speed away): ignore it.
+			const bool pushAgain = r.kind == hlcore::Contact::kPush && g_air.pushedLast;
+			g_air.pushedLast = r.kind == hlcore::Contact::kPush;
+			if (pushAgain) {
+				if (g_cfg.debugLog && g_stats.detailLogs < 60) {
+					++g_stats.detailLogs;
+					REX::INFO("push ignored (second in a row): expected ({:.0f},{:.0f}) actual ({:.0f},{:.0f})", r.expected.x, r.expected.y, act.x, act.y);
+				}
+				r.kind = hlcore::Contact::kNone;
+				r.sim = simBefore;
+			}
 			contact = r.kind;
 			bool probed = false;
 			if (r.kind == hlcore::Contact::kWall && g_cfg.wallProbe) {

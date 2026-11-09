@@ -1,5 +1,5 @@
 # BHOP record | mode 2 | friction 4 accelerate 10 stopspeed 100 tick 0.015 | airaccelerate 10 aircap 30 assist 0.5 | unitscale 0.0254
 t,dt,rawGround,ground,wishX,wishY,wishSpeed,stickX,stickY,yawRate,askedX,askedY,askedVz,actX,actY,repX,repY,gnx,gny,gnz,hasGround,simBeforeX,simBeforeY,contact,simX,simY,frictionMult,accelMult,airAccelMult,airSurface,grace,smoothing,outX,outY,inX,inY,inVz,outVz,measVz
-0,0.022,1,1,1,0,190,0,1,0,190,0,0,190,0,190,0,0,0,1,1,190,0,0,190,0,1.3,1.3,1,1,0,2,0,0,0,0,0,0,0
-0,0.022,1,1,1,0,190,0,1,0,300,100,0,270,0,270,0,0,0,1,1,300,100,2,300,100,1.3,1.3,1,1,0,2,0,0,0,0,0,0,0
-0,0.022,1,1,1,0,190,0,1,0,400,0,0,0,0,0,0,0,0,1,1,400,0,2,400,0,1.3,1.3,1,1,0,2,0,0,0,0,0,0,0
+0,0.022,1,1,1,0,190,0,1,0,190,0,0,190,0,190,0,0,0,1,1,190,0,0,190,0,1.3,1.3,1,1,0,2,190,0,0,0,0,0,0
+0,0.022,1,1,1,0,190,0,1,0,300,100,0,270,0,270,0,0,0,1,1,300,100,2,300,0,1.3,1.3,1,1,0,2,266.53,0,0,0,0,0,0
+0,0.022,1,1,1,0,190,0,1,0,400,0,0,0,0,0,0,0,0,1,1,400,0,2,0,0,1.3,1.3,1,1,0,2,50.7,0,0,0,0,0,0

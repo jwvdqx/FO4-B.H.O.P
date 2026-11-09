@@ -32,6 +32,7 @@ namespace
 		float         actualSpeed{ 0.0f };
 		float         reportedSpeed{ 0.0f };
 		bool          measured{ false };
+		float         measScale{ 1.0f };
 		int           state{ -1 };
 		std::uint32_t material{ 0 };
 		float         water{ 0.0f };
@@ -163,10 +164,10 @@ namespace
 			return;
 		}
 		g_stats.lastPrint = now;
-		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {} | run speed data {:.0f} seen {:.0f} | slowest step sound {:.2f} ms",
+		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {} | run speed data {:.0f} seen {:.0f} | slowest step sound {:.2f} ms | measure check {:.3f}",
 			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed, g_stats.reportedSpeed, g_stats.measured ? "" : ", not measured",
 			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load(),
-			g_dataSpeed[g_inPowerArmor.load() ? 1 : 0][1].load(), g_input.learned[g_inPowerArmor.load() ? 1 : 0][1], Sounds::g_loadMaxMs.exchange(0.0f));
+			g_dataSpeed[g_inPowerArmor.load() ? 1 : 0][1].load(), g_input.learned[g_inPowerArmor.load() ? 1 : 0][1], Sounds::g_loadMaxMs.exchange(0.0f), g_stats.measScale);
 		g_stats.calls = 0;
 		g_stats.groundCalls = 0;
 		g_stats.clips = 0;
@@ -253,7 +254,9 @@ namespace
 				auto&       l = g_input.learned[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(w.cls)];
 				const float base = vanSpeed / std::max(g_speedMult.load(), 0.1f);
 				l += (base - l) * std::min(1.0f, a_dt * 2.0f);
-				g_input.seen[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(w.cls)] = true;
+				if (g_input.heldTime > 2.0f) {
+					g_input.seen[g_inPowerArmor.load() ? 1 : 0][static_cast<int>(w.cls)] = true;  // settled: good enough to check the data
+				}
 			}
 		} else {
 			g_input.heldTime = 0.0f;
@@ -464,6 +467,8 @@ namespace
 		float sentVz{ 0.0f };        // vertical speed we handed the game last step (m/s)
 		float measVz{ 0.0f };        // vertical speed you really moved at (m/s)
 		bool  hasMeasVz{ false };
+		float measScale{ 1.0f };     // measured speed / real speed, learned on flat ground (should stay ~1)
+		bool  pushedLast{ false };
 		// Half-Life jumping and gravity (iJumpPhysics 1/2)
 		bool  vzOn{ false };         // we're in charge of your vertical speed
 		float vz{ 0.0f };            // our vertical speed (m/s)

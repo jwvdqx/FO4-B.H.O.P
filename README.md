@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.3.1)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.4.0)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -7,15 +7,21 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 
 - **Direct stick input**: the stick is read directly, so Fallout's own slow speed-up/slow-down is skipped
   (first person). Fallout still decides when you may move (dialogue, scenes).
-- Half-Life ground friction and acceleration, run every frame by default for the smoothest, delay-free feel
-  (exact HL tick rate available). **Responsiveness** slider for more or less grip.
+- Half-Life ground friction and acceleration. By default every frame is split into Half-Life-sized steps
+  (10 ms in HL1, 15 ms in HL2) done right away, each using the direction you faced at that moment: you get
+  Half-Life's results at any frame rate (air strafing gains what it does at 100 fps) with no added delay.
+  **Responsiveness** slider for more or less grip.
+- **Speeds**: read from Fallout's own movement data (walk/run/sprint/sneak, Power Armor), checked against what
+  Fallout actually does, so they're right from the first step.
 - **Speeds**: Fallout's own, or Half-Life's (HL2: walk 150, run 190, sprint 320 using Fallout's AP drain;
   HL1: run 320, sprint optional).
 - **Surfaces**: ice slides, mud/snow/sand drag, water slows you (Source-style surface friction).
 - **Weight**: carry weight and Power Armor slow your starts and turns.
 - Walls, NPCs and doors: the part of your speed going into them is removed and you slide along the rest
-  (Source's ClipVelocity; the mod measures how far you really moved and finds the wall from the direction you slid, so sliding along a wall
-  keeps your forward speed). Slopes and steps are left alone.
+  (Source's ClipVelocity). The mod measures how far you really moved and finds the wall from the direction
+  you slid, so sliding along a wall keeps your forward speed. Optional wall probe (on by default, an
+  experiment): rays check the real wall surface to get its exact direction.
+- Slopes use the floor direction the game reports, so going up or across a slope never counts as a wall.
 - Pushes (hits, explosions, scripts) add to your momentum, Half-Life style. Scripted walks and anything
   moving you far faster than you can run are left to Fallout.
 - Short "airborne" moments on stairs count as ground.
@@ -34,11 +40,15 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   you ducked. Fallout can't shrink your body mid-air, so this is an upward boost giving the same extra height;
   normal physics still stops you at ceilings.
 - Edge friction (optional, off by default): Half-Life 1 doubles friction when there's no floor just ahead,
-  so you stop at ledges. Checked with three short rays across your width, like HL1's box check.
+  so you stop at ledges. Checked with three rays across your width, 16 units ahead and 34 down, like HL1.
+- **Jumping and gravity** (optional, off by default): Half-Life gravity with Fallout's jump height (same
+  height, quicker jump), or exact Half-Life (HL1 jumps 45 units, HL2 21). The mod then handles your vertical
+  speed in the air; ceilings and launches (explosions) are followed. Fall damage may change: test it.
 
 ## Camera (first person)
 
 - Half-Life 1 view bob, strafe roll and landing tilt. "Like the game" = on in HL1 mode, off in HL2 mode.
+  The bob is Half-Life's real size (before v1.4 it was a third of it; lower **Bob strength** if you liked that).
 
 ## Sounds
 
@@ -87,16 +97,25 @@ chain with other plugins that changed the same functions. Problems are written t
 
 ## Known limits
 
-- Collision and push detection compare what the game did with what the mod asked for; there's no direct wall
-  normal from the engine, so very noisy geometry may need tuning (`fPushThreshold`).
+- Wall and push detection compare how far you really moved with what the mod asked for; the game gives no
+  wall direction, so it's worked out from your motion (and the optional wall probe).
 - Perks are found by name (English by default; change the names in the settings file for other languages).
 - No speedometer yet.
 
-## Math tests
+## Code layout
 
-`src/HLMath.h` holds the Half-Life math (friction, acceleration, air acceleration, wall clipping, HL1
-bunnyhop cap, HL2 jump boost, step sounds, landing punch), checked against Valve's published code.
-`tests/test_hlmath.cpp` tests it on every build.
+- `src/core/` - the movement rules as plain functions with no Fallout code: `HLMath.h` (Valve's formulas:
+  friction, acceleration, air acceleration, wall clipping, HL1 bunnyhop cap, HL2 jump boost, step sounds,
+  landing punch) and `MoveCore.h` (Half-Life-sized steps, walls/slopes/pushes, jumping and gravity).
+- `src/fo4/` - the Fallout side, one part per file: settings, RTTI, game state, camera, sounds, movement
+  state, recording, and the velocity hook. `src/main.cpp` includes them in order.
+
+## Tests and replays
+
+`tests/test_hlmath.cpp` tests the core on every build. With **Record movement** on (MCM -> Debug), closing
+the pause menu records the next seconds of movement to `Documents\My Games\Fallout4\F4SE\BHOP_record.csv`.
+`bhop_replay BHOP_record.csv` runs the movement core on exactly those moments, to check changes without
+playing.
 
 ## Threads
 
@@ -108,7 +127,7 @@ bunnyhop cap, HL2 jump boost, step sounds, landing punch), checked against Valve
 
 ## Build
 
-Every push is built by GitHub Actions (with the math tests). Publishing a release on GitHub builds once more
+Every push is built by GitHub Actions (with the tests and the replay tool). Publishing a release on GitHub builds once more
 and attaches `BHOP-<version>.zip`.
 
 ## Logs
