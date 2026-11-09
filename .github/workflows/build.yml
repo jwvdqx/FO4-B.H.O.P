@@ -18,9 +18,29 @@ jobs:
           git checkout 7c8c6f8a349ac85abf6fc8a7e5a71732d9339954
           git submodule update --init --recursive
 
-      - uses: xmake-io/github-action-setup-xmake@v1
+      - name: Set up xmake
+        id: xmake
+        continue-on-error: true
+        uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
+
+      - name: Set up xmake (fallback if the step above failed)
+        if: steps.xmake.outcome == 'failure'
+        shell: pwsh
+        run: |
+          for ($i = 1; $i -le 5; $i++) {
+            try {
+              Invoke-Expression (Invoke-WebRequest 'https://xmake.io/psget.text' -UseBasicParsing).Content
+              break
+            } catch {
+              Write-Host "xmake download failed (try $i), retrying..."
+              Start-Sleep -Seconds 15
+            }
+          }
+          $xm = Join-Path $env:USERPROFILE 'xmake'
+          if (!(Test-Path $xm)) { $xm = Join-Path $env:LOCALAPPDATA 'xmake' }
+          Add-Content $env:GITHUB_PATH $xm
 
       - name: Build
         shell: pwsh
