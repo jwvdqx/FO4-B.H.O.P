@@ -995,6 +995,9 @@ namespace
 			}
 			const RE::NiPoint3 pos(player->data.location.x, player->data.location.y, player->data.location.z);
 			handle.SetPosition(pos);
+			if (auto root = player->Get3D()) {
+				handle.SetObjectToFollow(root);  // stays with you while you run, instead of being left behind
+			}
 			const float vol = std::clamp(a_req.volume * g_cfg.volume, 0.001f, 1.0f);
 			const auto  att = static_cast<std::uint16_t>(std::clamp(-2000.0f * std::log10(vol), 0.0f, 10000.0f));  // 1/100 dB
 			handle.SetStaticAttenuation(att);
@@ -1233,11 +1236,14 @@ namespace
 			return g_origFootstep(a_sink, a_event, a_source);
 		}
 
+		bool g_footstepSearched{ false };
+
 		void InstallFootstepHook()
 		{
-			if (g_origFootstep || !g_cfg.muteVanillaFootsteps) {
+			if (g_origFootstep || g_footstepSearched || !g_cfg.muteVanillaFootsteps) {
 				return;
 			}
+			g_footstepSearched = true;
 			const auto vtables = FindVtables("BGSImpactManager");
 			if (vtables.empty()) {
 				REX::WARN("BGSImpactManager not found; vanilla player footsteps will still play");
@@ -1559,10 +1565,10 @@ namespace
 	void ReloadSettings()
 	{
 		{
-			std::scoped_lock lock(g_simLock);
+			std::scoped_lock lock(g_simLock);  // the physics thread reads these while you move
 			LoadConfig();
+			Sounds::BuildMaterials();
 		}
-		Sounds::BuildMaterials();
 		Sounds::InstallFootstepHook();
 	}
 
