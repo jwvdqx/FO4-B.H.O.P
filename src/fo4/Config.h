@@ -106,6 +106,7 @@ namespace
 		// ---- sounds
 		bool  sounds{ true };
 		int   soundSet{ 0 };  // 0 = follow iMode, 1 = Half-Life 1, 2 = Half-Life 2
+		int   surfaceSet[17]{};  // per surface (kSurfaces): 0 = the sound set above, 1 = Half-Life 1, 2 = Half-Life 2
 		bool  muteVanillaFootsteps{ true };
 		bool  jumpLandSounds{ true };
 		bool  waterSounds{ true };
@@ -130,6 +131,33 @@ namespace
 		std::uint32_t filePriority{ 1 };
 		std::vector<std::pair<std::string, std::string>> materialOverrides;
 	} g_cfg;
+
+	// Footstep surfaces you can give their own game (MCM -> Sounds -> Sounds by surface).
+	// Each lists the surface categories it covers (see Sounds::CategoryFromName).
+	struct SurfaceKey
+	{
+		const char* key;
+		const char* cats[3];
+	};
+	inline constexpr SurfaceKey kSurfaces[17]{
+		{ "iSurfaceConcrete", { "concrete" } },
+		{ "iSurfaceMetal", { "metal" } },
+		{ "iSurfaceGrate", { "grate", "chainlink" } },
+		{ "iSurfaceDuct", { "duct" } },
+		{ "iSurfaceWood", { "wood" } },
+		{ "iSurfaceWoodPanel", { "woodpanel" } },
+		{ "iSurfaceTile", { "tile", "glass", "ice" } },
+		{ "iSurfaceDirt", { "dirt" } },
+		{ "iSurfaceGrass", { "grass" } },
+		{ "iSurfaceGravel", { "gravel" } },
+		{ "iSurfaceMud", { "mud" } },
+		{ "iSurfaceSand", { "sand" } },
+		{ "iSurfaceSnow", { "snow" } },
+		{ "iSurfaceCarpet", { "carpet" } },
+		{ "iSurfaceWater", { "slosh", "wade" } },
+		{ "iSurfaceSwim", { "swim" } },
+		{ "iSurfacePowerArmor", { "powerarmor" } },
+	};
 
 	struct Active
 	{
@@ -212,6 +240,11 @@ namespace
 					B("bWallProbe", g_cfg.wallProbe);
 					B("bRecord", g_cfg.record);
 					F("fRecordSeconds", g_cfg.recordSeconds);
+					for (int i = 0; i < 17; ++i) {
+						if (key == kSurfaces[i].key) {
+							g_cfg.surfaceSet[i] = std::clamp(std::stoi(val), 0, 2);
+						}
+					}
 					if (key == "iJumpPhysics") {
 						g_cfg.jumpPhysics = std::clamp(std::stoi(val), 0, 2);
 					}

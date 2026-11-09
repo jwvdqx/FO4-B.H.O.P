@@ -56,6 +56,9 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 
 - Half-Life 1/2 footsteps, jump and landing sounds by surface, timed like Half-Life; vanilla player footsteps
   muted (NPCs untouched). Same reverb as vanilla footsteps (works with reverb mods). Sounds follow you.
+- **Sounds by surface**: each surface (wood, grass, metal, water, Power Armor...) can use Half-Life 1's or
+  Half-Life 2's sounds, whatever the main sound set. Example: HL1 mode with HL2's wood steps (HL1 has none).
+  Step timing and volume still follow the main sound set.
 
 ## Perks
 

@@ -50,6 +50,29 @@ namespace
 			return it != m.end() ? it->second : "concrete";
 		}
 
+		// Which game's sounds play on this surface: its own choice in the MCM, or the sound set.
+		// If that game has no files for it, the sound set is used.
+		int SetFor(const std::string& a_cat)
+		{
+			const int base = SoundSet();
+			if (base == 0) {
+				return 0;
+			}
+			for (const auto& sk : kSurfaces) {
+				for (const char* c : sk.cats) {
+					if (c && a_cat == c) {
+						const int pick = g_cfg.surfaceSet[&sk - kSurfaces];
+						if (pick == 0 || pick == base) {
+							return base;
+						}
+						const auto it = g_groups[pick].find(GroupFor(pick, a_cat));
+						return it != g_groups[pick].end() && !it->second.files.empty() ? pick : base;
+					}
+				}
+			}
+			return base;
+		}
+
 		std::string CategoryFromName(const std::string& a_lower)
 		{
 			auto has = [&](const char* s) { return a_lower.find(s) != std::string::npos; };
@@ -219,6 +242,7 @@ namespace
 		// ---------------------------------------------------------- playback
 		struct Request
 		{
+			int         set;    // 1 = HL1 files, 2 = HL2 files
 			std::string group;
 			int         index;  // -1 = random
 			float       volume;
@@ -303,16 +327,16 @@ namespace
 				return;
 			}
 			for (auto& r : todo) {
-				PlayNow(r, set);
+				PlayNow(r, r.set >= 1 && r.set <= 2 ? r.set : set);
 			}
 		}
 
-		void Queue(std::string a_group, int a_index, float a_volume)
+		void Queue(int a_set, std::string a_group, int a_index, float a_volume)
 		{
 			{
 				std::scoped_lock lock(g_queueLock);
 				if (g_queue.size() < 16) {
-					g_queue.push_back({ std::move(a_group), a_index, a_volume });
+					g_queue.push_back({ a_set, std::move(a_group), a_index, a_volume });
 				}
 			}
 			if (!g_playQueued.exchange(true)) {
@@ -344,8 +368,8 @@ namespace
 			if (a_waterDepth > 1.0f && a_waterDepth < 200.0f) {
 				return a_waterDepth > 35.0f ? "wade" : "slosh";
 			}
-			if (g_inPowerArmor.load() && g_cfg.powerArmorHardboot && SoundSet() == 2) {
-				return "powerarmor";
+			if (g_inPowerArmor.load() && g_cfg.powerArmorHardboot && SetFor("powerarmor") == 2) {
+				return "powerarmor";  // HL2's hard boots (HL1 has none: the floor's own sound)
 			}
 			auto it = g_materialCat.find(a_con->supportMaterial);
 			return it != g_materialCat.end() ? it->second : "concrete";
@@ -370,11 +394,11 @@ namespace
 
 		void PlayStep(RE::bhkCharacterController* a_con, float a_volume)
 		{
-			const int   set = SoundSet();
 			float       depth = 0.0f;
 			const auto  cat = SurfaceCategory(a_con, depth);
+			const int   set = SetFor(cat);
 			const auto  group = GroupFor(set, cat);
-			Queue(group, StepIndex(set, group), a_volume);
+			Queue(set, group, StepIndex(set, group), a_volume);
 		}
 
 		// called from the velocity hook for the player, every physics step
@@ -407,7 +431,7 @@ namespace
 						g_step.timer = g_cfg.runInterval;
 					}
 					if (set == 1 && g_cfg.hl1FallPain && fall >= g_cfg.fallPainSpeed) {
-						Queue("pl_fallpain", 1, 1.0f);  // pl_fallpain3, as in Half-Life
+						Queue(1, "pl_fallpain", 1, 1.0f);  // pl_fallpain3, as in Half-Life
 					}
 				}
 			}
@@ -417,7 +441,8 @@ namespace
 			// swimming
 			if (g_swimming.load()) {
 				if (g_cfg.swimSounds && hSpeed > g_cfg.minStepSpeed && g_step.timer <= 0.0f) {
-					Queue(GroupFor(set, "swim"), -1, 0.5f);
+					const int swimSet = SetFor("swim");
+					Queue(swimSet, GroupFor(swimSet, "swim"), -1, 0.5f);
 					g_step.timer = g_cfg.waterInterval;
 				}
 				return;
@@ -460,8 +485,9 @@ namespace
 			}
 			g_step.timer = interval;
 
-			const auto group = GroupFor(set, cat);
-			Queue(group, StepIndex(set, group), vol);
+			const int  catSet = SetFor(cat);
+			const auto group = GroupFor(catSet, cat);
+			Queue(catSet, group, StepIndex(catSet, group), vol);
 		}
 
 		// ---------------------------------------------------------- muting vanilla player footsteps

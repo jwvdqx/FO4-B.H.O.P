@@ -738,6 +738,248 @@
           }
         },
         {
+          "text": "Sounds by surface",
+          "type": "section"
+        },
+        {
+          "id": "iSurfaceConcrete:Sounds",
+          "text": "Concrete and stone",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: its normal step. HL2: concrete. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceMetal:Sounds",
+          "text": "Metal",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 and HL2: metal. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceGrate:Sounds",
+          "text": "Grates and chain-link",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: grate. HL2: metal grate and chain-link. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceDuct:Sounds",
+          "text": "Thin metal and ducts",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: vent. HL2: duct. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceWood:Sounds",
+          "text": "Wood",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 has no wood sounds (its normal step, as in the original). HL2: wood. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceWoodPanel:Sounds",
+          "text": "Wood panels and planks",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 has no wood sounds (its normal step). HL2: wood panel. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceTile:Sounds",
+          "text": "Tile, glass and ice",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 and HL2: tile. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceDirt:Sounds",
+          "text": "Dirt and soil",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 and HL2: dirt. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceGrass:Sounds",
+          "text": "Grass",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: dirt (no grass sounds). HL2: grass. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceGravel:Sounds",
+          "text": "Gravel",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: dirt (no gravel sounds). HL2: gravel. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceMud:Sounds",
+          "text": "Mud",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: dirt (no mud sounds). HL2: mud. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceSand:Sounds",
+          "text": "Sand",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: dirt (no sand sounds). HL2: sand. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceSnow:Sounds",
+          "text": "Snow",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: dirt. HL2: gravel (neither game has snow steps). If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceCarpet:Sounds",
+          "text": "Carpet and cloth",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: its normal step. HL2: soft shoe. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceWater:Sounds",
+          "text": "Shallow water",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 and HL2: slosh and wade. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfaceSwim:Sounds",
+          "text": "Swimming",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1: swim. HL2: wade (HL2 has no swim strokes). If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "iSurfacePowerArmor:Sounds",
+          "text": "Power Armor steps",
+          "type": "dropdown",
+          "help": "Which game's footsteps play here. HL1 has no boots sound (the floor's own sound). HL2: hard boots. Needs 'Power Armor boots' on. If the chosen game's files are missing, the sound set is used.",
+          "valueOptions": {
+            "options": [
+              "Sound set",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
           "text": "Volume",
           "type": "section"
         },
