@@ -80,13 +80,18 @@ namespace hlmath
 	}
 
 	// PM_PreventMegaBunnyJumping (HL1): above 1.7x max speed you're cut to 0.65 of that.
-	inline Vec2 HL1BunnyCap(Vec2 a_vel, float a_maxSpeed)
+	// The original measures the FULL 3D velocity. It runs inside PM_Jump before the jump's upward speed
+	// is set, but on the landing frame (the frame a bunnyhop jumps on) the velocity still holds the
+	// downward speed of the fall, because HL1 zeroes it only after the jump check. a_verticalSpeed is that
+	// speed (sign doesn't matter). Only the horizontal result is returned: the vertical part is replaced
+	// by the jump speed right after, in the original too.
+	inline Vec2 HL1BunnyCap(Vec2 a_vel, float a_verticalSpeed, float a_maxSpeed)
 	{
 		const float maxScaled = 1.7f * a_maxSpeed;
 		if (maxScaled <= 0.0f) {
 			return a_vel;
 		}
-		const float speed = a_vel.Length();
+		const float speed = std::sqrt(a_vel.x * a_vel.x + a_vel.y * a_vel.y + a_verticalSpeed * a_verticalSpeed);
 		if (speed <= maxScaled) {
 			return a_vel;
 		}

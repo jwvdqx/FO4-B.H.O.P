@@ -1910,12 +1910,15 @@ namespace
 	// ---------------------------------------------------------------------
 	// jumping: HL1 bunnyhop cap / HL2 forward boost (and its ABH quirk)
 	// ---------------------------------------------------------------------
-	void OnJump(const Wish& a_wish)
+	// a_landingFall: fall speed still "in" the velocity when you jump right on landing (HL1 cap only)
+	void OnJump(const Wish& a_wish, float a_landingFall)
 	{
 		const float maxSpeed = std::max(ClassSpeed(a_wish.cls == MoveClass::kSprint ? MoveClass::kSprint : MoveClass::kRun, false), 1.0f);
 		if (g_cfg.mode == Mode::kHL1) {
 			if (g_cfg.hl1BhopCap) {
-				SetSimVel(hlmath::HL1BunnyCap(SimVel(), maxSpeed));
+				// HL1 checks 3D speed on the landing frame, when the fall speed is still in the velocity.
+				// We count it when the jump comes right after a landing (the bunnyhop window).
+				SetSimVel(hlmath::HL1BunnyCap(SimVel(), a_landingFall, maxSpeed));
 			}
 			return;
 		}
@@ -2042,6 +2045,8 @@ namespace
 		float airTime{ 0.0f };
 		bool  jumpedThisAir{ false };
 		float maxFall{ 0.0f };  // fastest downward speed this time in the air (HL units/s)
+		float lastLandFall{ 0.0f };  // fall speed at the last landing (HL units/s)
+		float sinceLanding{ 10.0f };  // seconds since the last landing
 		hlmath::Vec2 lastOut{};  // what we told the game last step
 		float jumpStartZ{ 0.0f }, jumpPeakZ{ 0.0f }, jumpTakeoffVz{ 0.0f }, jumpTime{ 0.0f };
 		bool  measuring{ false };
@@ -2238,6 +2243,12 @@ namespace
 		}
 		const bool landEvent = !g_air.prevGround && onGround;
 		const float fallSpeed = g_air.maxFall;
+		if (landEvent) {
+			g_air.lastLandFall = fallSpeed;
+			g_air.sinceLanding = 0.0f;
+		} else {
+			g_air.sinceLanding = std::min(g_air.sinceLanding + dt, 10.0f);
+		}
 		if (landEvent && !menus) {
 			Camera::OnLand(fallSpeed);
 			if (g_landSneak.exchange(false) && g_cfg.crouchLandSneak) {
@@ -2381,7 +2392,10 @@ namespace
 				g_sim.pvy = g_sim.vy;
 			}
 			if (jumped) {
-				OnJump(wish);
+				// HL1 checks 3D speed on the landing frame, when the fall speed is still in the velocity.
+				// We count it when the jump comes right after a landing (the bunnyhop window).
+				const float window = g_cfg.bhopGrace + 0.025f * static_cast<float>(Perks::Bonus() ? Perks::Rank(Perks::kActionBoy) : 0) + 0.02f;
+				OnJump(wish, g_air.sinceLanding <= window ? g_air.lastLandFall : 0.0f);
 				g_sim.pvx = g_sim.vx;  // the jump boost is instant, don't blend it in
 				g_sim.pvy = g_sim.vy;
 			}

@@ -98,10 +98,19 @@ int main()
 
 	// --- HL1 bunnyhop cap: max 320 -> limit 544; at 600 you drop to 544*0.65 = 353.6
 	{
-		Vec2 v = HL1BunnyCap({ 600.0f, 0.0f }, 320.0f);
+		Vec2 v = HL1BunnyCap({ 600.0f, 0.0f }, 0.0f, 320.0f);
 		Near(v.x, 353.6, 1e-2, "HL1 cap cuts mega bunnyhops");
-		v = HL1BunnyCap({ 500.0f, 0.0f }, 320.0f);
+		v = HL1BunnyCap({ 500.0f, 0.0f }, 0.0f, 320.0f);
 		Near(v.x, 500.0, 1e-3, "HL1 cap leaves normal speed alone");
+		// regression: the cap uses 3D speed. 500 horizontal + 268 vertical = 567.3 > 544:
+		// fraction = 544 / 567.27 * 0.65 = 0.6233 -> 311.7
+		v = HL1BunnyCap({ 500.0f, 0.0f }, 268.0f, 320.0f);
+		Near(v.x, 500.0 * (544.0 / std::sqrt(500.0 * 500.0 + 268.0 * 268.0)) * 0.65, 1e-2, "HL1 cap counts vertical speed (3D)");
+		v = HL1BunnyCap({ 500.0f, 0.0f }, -268.0f, 320.0f);
+		Near(v.x, 311.7, 0.1, "HL1 cap: falling speed counts the same as rising");
+		// with a 268 fall, the horizontal limit is sqrt(544^2 - 268^2) = 473.4
+		v = HL1BunnyCap({ 473.0f, 0.0f }, -268.0f, 320.0f);
+		Near(v.x, 473.0, 1e-3, "HL1 cap: just under the 3D limit is untouched");
 	}
 
 	// --- HL2 jump boost: max 190, forward 190 at standstill: +95 (to 285 = 190*1.5)
