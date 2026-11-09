@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.0.1)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.1.0)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -13,15 +13,20 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   HL1: run 320, sprint optional).
 - **Surfaces**: ice slides, mud/snow/sand drag, water slows you (Source-style surface friction).
 - **Weight**: carry weight and Power Armor slow your starts and turns.
-- Walls take your speed away. Short "airborne" moments on stairs count as ground.
+- Walls, NPCs and doors: the part of your speed going into them is removed and you slide along the rest
+  (Source's ClipVelocity, using the direction the game pushed you back). Slopes and steps are left alone.
+- Pushes (hits, explosions, scripts) add to your momentum, Half-Life style. Scripted walks and anything
+  moving you far faster than you can run are left to Fallout.
+- Short "airborne" moments on stairs count as ground.
 - Uses the game's own physics step time, so VATS slow-motion and time changes stay in sync.
 
 ## Air and bunnyhopping
 
 - Half-Life air control: momentum kept in the air, air strafing (hold left/right and turn the same way),
   with an optional **strafe assist** for sticks.
-- Bunnyhop: jump again right after landing and friction doesn't slow you. HL1's bunnyhop cap and HL2's jump
-  boost (with its ABH quirk) are included and can be turned off.
+- Bunnyhop: jump again within 0.05 s of landing (original games: one frame) and friction doesn't slow you.
+  Action Boy/Girl widens the window; at max rank, hold jump to bunnyhop automatically (auto-jump can also be
+  set to always or off). HL1's bunnyhop cap and HL2's jump boost (with its ABH quirk) are included.
 
 ## Camera (first person)
 
@@ -35,7 +40,8 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 ## Perks
 
 - Bonus mode (default): Moving Target = faster sprint, Strong Back = weight slows you less, Adamantium Skeleton =
-  softer landing tilt, Aquaboy/Aquagirl = no water drag, Sneak = quieter steps, Agility = better air control.
+  softer landing tilt, Aquaboy/Aquagirl = no water drag, Sneak = quieter steps, Agility = better air control,
+  Action Boy/Girl = wider bunnyhop window and auto-jump at max rank.
 - Unlock mode: air control needs Agility 5, bunnyhop needs Moving Target 1, ABH needs Moving Target 3.
 
 ## Install
@@ -73,11 +79,17 @@ chain with other plugins that changed the same functions. Problems are written t
 
 ## Known limits
 
-- Collisions are handled by checking how much speed the game removed, not the wall's direction yet.
-- Knockback, explosions and scripted pushes on the player's horizontal movement aren't separated from your own
-  movement yet.
+- Collision and push detection compare what the game did with what the mod asked for; there's no direct wall
+  normal from the engine, so very noisy geometry may need tuning (`fPushThreshold`).
+- HL1's edge friction (extra friction at ledges) isn't included.
 - Perks are found by name (English by default; change the names in the settings file for other languages).
 - No speedometer or crouch-jump yet.
+
+## Math tests
+
+`src/HLMath.h` holds the Half-Life math (friction, acceleration, air acceleration, wall clipping, HL1
+bunnyhop cap, HL2 jump boost, step sounds, landing punch), checked against Valve's published code.
+`tests/test_hlmath.cpp` tests it on every build.
 
 ## Build
 

@@ -62,6 +62,12 @@ jobs:
           xmake build -y
           xmake install -y
 
+      - name: Math tests
+        shell: pwsh
+        run: |
+          xmake build -y bhop_tests
+          xmake run bhop_tests
+
       - name: Upload mod folder
         uses: actions/upload-artifact@v4
         with:

@@ -80,7 +80,10 @@ namespace
 		float airCap{ 30.0f };         // Half-Life caps air wish speed at 30
 		float strafeAssist{ 0.5f };    // 0 = pure Half-Life, 1 = full help for sticks
 		bool  bhop{ true };
-		float bhopGrace{ 0.10f };      // seconds after landing without friction
+		float bhopGrace{ 0.05f };      // seconds after landing without friction (original games: one frame)
+		int   autoJump{ 1 };           // 0 off, 1 with Action Boy/Girl at max rank, 2 always
+		bool  pushes{ true };          // hits/explosions add to your momentum (Half-Life style)
+		float pushThreshold{ 60.0f };  // HL units/s of sudden extra speed that counts as a push
 		bool  hl1BhopCap{ true };
 		bool  hl2JumpBoost{ true };
 		bool  hl2ABH{ true };
@@ -92,7 +95,7 @@ namespace
 		// ---- perks: 0 off, 1 bonus, 2 unlock
 		int   perkMode{ 1 };
 		// perk names to look for (lower case, '|' between alternatives) - change for non-English games
-		std::string perkNames[5]{ "moving target", "strong back", "adamantium skeleton", "aquaboy|aquagirl", "sneak" };
+		std::string perkNames[6]{ "moving target", "strong back", "adamantium skeleton", "aquaboy|aquagirl", "sneak", "action boy|action girl" };
 
 		// 1 Half-Life unit (1 inch) in Havok units (metres)
 		float unitScale{ 0.0254f };
@@ -110,8 +113,8 @@ namespace
 		float volume{ 1.0f };
 		float runVolume{ 0.5f };
 		float walkVolume{ 0.2f };
-		float sneakVolumeMult{ 0.5f };
-		float runStepSpeed{ 140.0f };  // HL units/s; Half-Life itself uses 220
+		float sneakVolumeMult{ 1.0f };  // extra; Half-Life already makes ducking steps quieter
+		float runStepSpeed{ 0.0f };  // HL units/s where steps switch to running; 0 = automatic (scaled from Half-Life)
 		float minStepSpeed{ 10.0f };
 		float runInterval{ 0.3f };
 		float walkInterval{ 0.4f };
@@ -228,12 +231,17 @@ namespace
 					F("fStrafeAssist", g_cfg.strafeAssist);
 					B("bBunnyhop", g_cfg.bhop);
 					F("fBhopGrace", g_cfg.bhopGrace);
+					if (key == "iAutoJump") {
+						g_cfg.autoJump = std::clamp(std::stoi(val), 0, 2);
+					}
+					B("bPushes", g_cfg.pushes);
+					F("fPushThreshold", g_cfg.pushThreshold);
 					B("bHL1BhopCap", g_cfg.hl1BhopCap);
 					B("bHL2JumpBoost", g_cfg.hl2JumpBoost);
 					B("bHL2ABH", g_cfg.hl2ABH);
 					{
-						static constexpr const char* kPerkKeys[5] = { "sPerkMovingTarget", "sPerkStrongBack", "sPerkAdamantiumSkeleton", "sPerkAquaboy", "sPerkSneak" };
-						for (int i = 0; i < 5; ++i) {
+						static constexpr const char* kPerkKeys[6] = { "sPerkMovingTarget", "sPerkStrongBack", "sPerkAdamantiumSkeleton", "sPerkAquaboy", "sPerkSneak", "sPerkActionBoy" };
+						for (int i = 0; i < 6; ++i) {
 							if (key == kPerkKeys[i] && !val.empty()) {
 								g_cfg.perkNames[i] = Lower(val);
 							}
@@ -315,7 +323,8 @@ namespace
 		F(c.airAccelerate, 0.0f, 100.0f, 10.0f);
 		F(c.airCap, 1.0f, 500.0f, 30.0f);
 		F(c.strafeAssist, 0.0f, 1.0f, 0.5f);
-		F(c.bhopGrace, 0.0f, 0.5f, 0.1f);
+		F(c.bhopGrace, 0.0f, 0.5f, 0.05f);
+		F(c.pushThreshold, 10.0f, 1000.0f, 60.0f);
 		F(c.surfaceStrength, 0.0f, 1.0f, 1.0f);
 		F(c.bobScale, 0.0f, 5.0f, 1.0f);
 		F(c.rollAngle, -15.0f, 15.0f, 2.0f);
@@ -324,8 +333,8 @@ namespace
 		F(c.volume, 0.0f, 4.0f, 1.0f);
 		F(c.runVolume, 0.0f, 1.0f, 0.5f);
 		F(c.walkVolume, 0.0f, 1.0f, 0.2f);
-		F(c.sneakVolumeMult, 0.0f, 1.0f, 0.5f);
-		F(c.runStepSpeed, 1.0f, 1000.0f, 140.0f);
+		F(c.sneakVolumeMult, 0.0f, 1.0f, 1.0f);
+		F(c.runStepSpeed, 0.0f, 1000.0f, 0.0f);
 		F(c.minStepSpeed, 0.0f, 200.0f, 10.0f);
 		F(c.runInterval, 0.05f, 2.0f, 0.3f);
 		F(c.walkInterval, 0.05f, 2.0f, 0.4f);
@@ -662,9 +671,10 @@ namespace
 
 	namespace Perks
 	{
-		std::vector<RE::BGSPerk*> g_list[5];  // moving target, strong back, adamantium skeleton, aquaboy/girl, sneak
-		std::atomic<int>          g_rank[5]{};
-		enum : int { kMovingTarget, kStrongBack, kAdamantium, kAquaboy, kSneak };
+		constexpr int             kCount = 6;
+		std::vector<RE::BGSPerk*> g_list[kCount];  // moving target, strong back, adamantium skeleton, aquaboy/girl, sneak, action boy/girl
+		std::atomic<int>          g_rank[kCount]{};
+		enum : int { kMovingTarget, kStrongBack, kAdamantium, kAquaboy, kSneak, kActionBoy };
 
 		void Resolve()
 		{
@@ -681,7 +691,7 @@ namespace
 				}
 				const auto name = Lower(std::string(RE::TESFullName::GetFullName(*perk)));
 				int        idx = -1;
-				for (int i = 0; i < 5 && idx < 0; ++i) {
+				for (int i = 0; i < kCount && idx < 0; ++i) {
 					std::string_view list = g_cfg.perkNames[i];
 					while (!list.empty()) {
 						const auto bar = list.find('|');
@@ -699,13 +709,13 @@ namespace
 					g_list[idx].push_back(perk);
 				}
 			}
-			REX::INFO("Perks found: Moving Target {}, Strong Back {}, Adamantium Skeleton {}, Aquaboy {}, Sneak {}",
-				g_list[0].size(), g_list[1].size(), g_list[2].size(), g_list[3].size(), g_list[4].size());
+			REX::INFO("Perks found (ranks): Moving Target {}, Strong Back {}, Adamantium Skeleton {}, Aquaboy {}, Sneak {}, Action Boy {}",
+				g_list[0].size(), g_list[1].size(), g_list[2].size(), g_list[3].size(), g_list[4].size(), g_list[5].size());
 		}
 
 		void Update(RE::PlayerCharacter* a_player)
 		{
-			for (int i = 0; i < 5; ++i) {
+			for (int i = 0; i < kCount; ++i) {
 				int r = 0;
 				for (auto p : g_list[i]) {
 					if (a_player->GetPerkRank(p) > 0) {
@@ -717,6 +727,7 @@ namespace
 		}
 
 		int Rank(int a_idx) { return g_cfg.perkMode == 0 ? 0 : g_rank[a_idx].load(); }
+		bool MaxRank(int a_idx) { return !g_list[a_idx].empty() && Rank(a_idx) >= static_cast<int>(g_list[a_idx].size()); }
 		bool Bonus() { return g_cfg.perkMode != 0; }
 		bool Unlock() { return g_cfg.perkMode == 2; }
 	}
@@ -950,6 +961,10 @@ namespace
 			REX::INFO("Camera hooked ({})", name);
 		}
 	}
+
+	// Footstep speed thresholds (HL units/s), worked out by the movement code from your current speeds.
+	float g_stepVelWalk{ 48.0f };
+	float g_stepVelRun{ 226.0f };
 
 	// =====================================================================
 	// sounds
@@ -1356,23 +1371,37 @@ namespace
 				return;
 			}
 
-			if (!a_onGround || hSpeed < g_cfg.minStepSpeed || g_step.timer > 0.0f) {
+			if (!a_onGround || hSpeed < 1.0f || g_step.timer > 0.0f) {
+				return;
+			}
+			const bool hl1 = set == 1;
+			// HL2 needs walking speed for a step; HL1 steps at any speed (PM_UpdateStepSound)
+			if (!hl1 && hSpeed < std::max(g_stepVelWalk, g_cfg.minStepSpeed)) {
 				return;
 			}
 
-			const bool running = hSpeed >= g_cfg.runStepSpeed;
-			float      vol = running ? g_cfg.runVolume : g_cfg.walkVolume;
-			float      interval = running ? g_cfg.runInterval : g_cfg.walkInterval;
+			const float velRun = g_cfg.runStepSpeed > 0.0f ? g_cfg.runStepSpeed : g_stepVelRun;
+			const bool  walking = hSpeed < velRun;
+			const bool  ducking = g_sneaking.load();
 
 			float      depth = 0.0f;
 			const auto cat = SurfaceCategory(a_con, depth);
+			auto       surf = hlmath::StepSurface::kNormal;
 			if (cat == "wade") {
-				interval = g_cfg.waterInterval;
-				vol = 0.65f;
+				surf = hlmath::StepSurface::kWade;
+			} else if (cat == "duct") {
+				surf = hlmath::StepSurface::kVent;
+			} else if (cat == "dirt" || cat == "grass" || cat == "gravel" || cat == "mud" || cat == "sand" || cat == "snow") {
+				surf = hlmath::StepSurface::kDirt;
 			}
-			if (g_sneaking.load()) {
-				vol *= g_cfg.sneakVolumeMult;
+			const auto r = hlmath::StepSound(hl1, surf, walking, ducking);  // Valve's volumes and timing
+
+			// your volume sliders scale Half-Life's own values (0.5 running / 0.2 walking)
+			float vol = r.volume * (walking ? g_cfg.walkVolume / 0.2f : g_cfg.runVolume / 0.5f);
+			float interval = surf == hlmath::StepSurface::kWade ? g_cfg.waterInterval : (walking ? g_cfg.walkInterval : g_cfg.runInterval);
+			if (ducking) {
 				interval += g_cfg.sneakExtraInterval;
+				vol *= g_cfg.sneakVolumeMult;
 				if (Perks::Bonus()) {
 					vol *= std::max(0.3f, 1.0f - 0.1f * static_cast<float>(Perks::Rank(Perks::kSneak)));  // Sneak: quieter steps
 				}
@@ -1517,6 +1546,8 @@ namespace
 	{
 		std::uint32_t calls{ 0 };
 		std::uint32_t groundCalls{ 0 };
+		std::uint32_t clips{ 0 };
+		std::uint32_t pushes{ 0 };
 		float         wishSpeed{ 0.0f };
 		float         outSpeed{ 0.0f };
 		float         actualSpeed{ 0.0f };
@@ -1527,30 +1558,21 @@ namespace
 		int           firstCalls{ 0 };
 	} g_stats;
 
+	hlmath::Vec2 SimVel() { return { g_sim.vx, g_sim.vy }; }
+	void         SetSimVel(hlmath::Vec2 a_v)
+	{
+		g_sim.vx = a_v.x;
+		g_sim.vy = a_v.y;
+	}
+
 	void Friction(float a_dt, float a_frictionMult)
 	{
-		const float speed = std::hypot(g_sim.vx, g_sim.vy);
-		if (speed < 0.1f) {
-			g_sim.vx = g_sim.vy = 0.0f;
-			return;
-		}
-		const float control = std::max(speed, g_active.stopSpeed);
-		const float drop = control * g_active.friction * a_frictionMult * a_dt;
-		const float scale = std::max(speed - drop, 0.0f) / speed;
-		g_sim.vx *= scale;
-		g_sim.vy *= scale;
+		SetSimVel(hlmath::Friction(SimVel(), g_active.friction, g_active.stopSpeed, a_frictionMult, a_dt));
 	}
 
 	void Accelerate(float a_dirX, float a_dirY, float a_wishSpeed, float a_dt, float a_accelMult)
 	{
-		const float current = g_sim.vx * a_dirX + g_sim.vy * a_dirY;
-		const float add = a_wishSpeed - current;
-		if (add <= 0.0f) {
-			return;
-		}
-		const float accelSpeed = std::min(g_active.accelerate * a_accelMult * a_dt * a_wishSpeed, add);
-		g_sim.vx += accelSpeed * a_dirX;
-		g_sim.vy += accelSpeed * a_dirY;
+		SetSimVel(hlmath::Accelerate(SimVel(), { a_dirX, a_dirY }, a_wishSpeed, g_active.accelerate, a_accelMult, a_dt));
 	}
 
 	void WeightMults(float& a_accel, float& a_friction)
@@ -1613,11 +1635,13 @@ namespace
 			return;
 		}
 		g_stats.lastPrint = now;
-		REX::INFO("[1s] calls {} ground {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {}",
-			g_stats.calls, g_stats.groundCalls, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed,
+		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {}",
+			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed,
 			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load());
 		g_stats.calls = 0;
 		g_stats.groundCalls = 0;
+		g_stats.clips = 0;
+		g_stats.pushes = 0;
 	}
 
 	// ---------------------------------------------------------------------
@@ -1668,6 +1692,7 @@ namespace
 		float heldTime{ 0.0f };
 		MoveClass lastClass{ MoveClass::kRun };
 		float blocked{ 0.0f };
+		float forced{ 0.0f };
 		float prevYaw{ 0.0f };
 		bool  hasYaw{ false };
 		float yawRate{ 0.0f };  // radians/s, positive = turning right
@@ -1745,7 +1770,13 @@ namespace
 		}
 		g_input.lastClass = w.cls;
 
-		const bool direct = g_cfg.directInput && g_firstPerson.load();
+		// Fallout moving you without the stick (scripted walks, auto-move from a mod): follow it.
+		if (w.mag < 0.05f && vanSpeed > 30.0f) {
+			g_input.forced += a_dt;
+		} else {
+			g_input.forced = 0.0f;
+		}
+		const bool direct = g_cfg.directInput && g_firstPerson.load() && g_input.forced < 0.3f;
 		if (direct) {
 			// Fallout still decides WHEN you may move: if it wants you still while you push the stick
 			// (dialogue, scripted scenes...), respect that after a moment.
@@ -1814,15 +1845,7 @@ namespace
 			}
 		}
 
-		const float wishspd = std::min(a_wish.speed, cap);
-		const float current = g_sim.vx * dirX + g_sim.vy * dirY;
-		const float add = wishspd - current;
-		if (add <= 0.0f) {
-			return;
-		}
-		const float accelSpeed = std::min(accelSpeedMax, add);
-		g_sim.vx += accelSpeed * dirX;
-		g_sim.vy += accelSpeed * dirY;
+		SetSimVel(hlmath::AirAccelerate(SimVel(), { dirX, dirY }, a_wish.speed, accel, cap, 1.0f, a_dt));
 	}
 
 	// ---------------------------------------------------------------------
@@ -1830,50 +1853,83 @@ namespace
 	// ---------------------------------------------------------------------
 	void OnJump(const Wish& a_wish)
 	{
-		const float speed = std::hypot(g_sim.vx, g_sim.vy);
 		const float maxSpeed = std::max(ClassSpeed(a_wish.cls == MoveClass::kSprint ? MoveClass::kSprint : MoveClass::kRun, false), 1.0f);
 		if (g_cfg.mode == Mode::kHL1) {
-			// PM_PreventMegaBunnyJumping
-			if (g_cfg.hl1BhopCap && speed > 1.7f * maxSpeed) {
-				const float fraction = (1.7f * maxSpeed / speed) * 0.65f;
-				g_sim.vx *= fraction;
-				g_sim.vy *= fraction;
+			if (g_cfg.hl1BhopCap) {
+				SetSimVel(hlmath::HL1BunnyCap(SimVel(), maxSpeed));
 			}
 			return;
 		}
 		if (!g_cfg.hl2JumpBoost) {
 			return;
 		}
-		// CHL2GameMovement::CheckJumpButton
 		auto player = RE::PlayerCharacter::GetSingleton();
 		if (!player) {
 			return;
 		}
-		const float yaw = player->data.angle.z;
-		const float fx = std::sin(yaw), fy = std::cos(yaw);
-		const bool  sprintOrDuck = a_wish.cls == MoveClass::kSprint || a_wish.cls == MoveClass::kSneak;
-		const float perc = sprintOrDuck ? 0.1f : 0.5f;
-		const float forwardMove = a_wish.inY * ClassSpeed(a_wish.cls, false);
-		float       addition = std::fabs(forwardMove * perc);
-		const float maxSp = maxSpeed + maxSpeed * perc;
-		const float newSpeed = addition + speed;
-		if (newSpeed > maxSp) {
-			addition -= newSpeed - maxSp;
-		}
-		if (forwardMove < 0.0f) {
-			addition *= -1.0f;
-		}
+		const float        yaw = player->data.angle.z;
+		const hlmath::Vec2 forward{ std::sin(yaw), std::cos(yaw) };
+		const bool         sprintOrDuck = a_wish.cls == MoveClass::kSprint || a_wish.cls == MoveClass::kSneak;
+		const float        forwardMove = a_wish.inY * ClassSpeed(a_wish.cls, false);
+		const hlmath::Vec2 before = SimVel();
+		hlmath::Vec2       after = hlmath::HL2JumpBoost(before, forward, forwardMove, maxSpeed, sprintOrDuck);
 		const bool abhAllowed = g_cfg.hl2ABH && !(Perks::Unlock() && Perks::Rank(Perks::kMovingTarget) < 3);
-		const float oldSpeed = speed;
-		g_sim.vx += fx * addition;
-		g_sim.vy += fy * addition;
 		if (!abhAllowed) {
-			const float s2 = std::hypot(g_sim.vx, g_sim.vy);
-			const float limit = std::max(oldSpeed, maxSp);
-			if (s2 > limit && s2 > 0.0f) {
-				g_sim.vx *= limit / s2;
-				g_sim.vy *= limit / s2;
+			const float limit = std::max(before.Length(), maxSpeed * (sprintOrDuck ? 1.1f : 1.5f));
+			const float len = after.Length();
+			if (len > limit && len > 0.0f) {
+				after = after * (limit / len);
 			}
+		}
+		SetSimVel(after);
+	}
+
+	std::atomic<long long> g_autoJumpUntil{ 0 };  // auto-jump: re-jump if jump is held until this time (ms)
+
+	// Auto-jump: the game only jumps when the jump key is freshly pressed. While you hold it, the jump
+	// handler keeps getting "held" events; right after a landing we hand it one as a fresh press.
+	namespace AutoJump
+	{
+		using OnButton_t = void (*)(void*, const RE::ButtonEvent*);
+		OnButton_t g_orig{ nullptr };
+		int        g_logs{ 0 };
+
+		void Hooked(void* a_this, const RE::ButtonEvent* a_event)
+		{
+			if (a_event && a_event->QPressed() && a_event->QHeldDownSecs() > 0.0f && NowMs() < g_autoJumpUntil.load()) {
+				g_autoJumpUntil = 0;
+				alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
+				std::memcpy(buf, a_event, sizeof(RE::ButtonEvent));
+				reinterpret_cast<RE::ButtonEvent*>(buf)->heldDownSecs = 0.0f;  // looks like a fresh press
+				if (g_cfg.debugLog && g_logs++ < 5) {
+					REX::INFO("auto-jump");
+				}
+				return g_orig(a_this, reinterpret_cast<const RE::ButtonEvent*>(buf));
+			}
+			g_orig(a_this, a_event);
+		}
+
+		void Install()
+		{
+			static bool done = false;
+			auto        controls = RE::PlayerControls::GetSingleton();
+			if (done || !controls || !controls->jumpHandler) {
+				return;
+			}
+			done = true;
+			const void* handler = controls->jumpHandler;
+			const char* name = RttiName(handler);
+			if (!name || std::string_view(name).find("JumpHandler") == std::string_view::npos) {
+				REX::ERROR("Jump handler has an unexpected type ({}); auto-jump NOT installed", name ? name : "unknown");
+				return;
+			}
+			auto vtbl = *reinterpret_cast<std::uintptr_t* const*>(handler);
+			if (!Game().Contains(vtbl[8])) {
+				REX::WARN("Jump key handling already changed by another plugin; chaining after it");
+			}
+			g_orig = reinterpret_cast<OnButton_t>(vtbl[8]);  // BSInputEventUser::OnButtonEvent
+			REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 8), reinterpret_cast<std::uintptr_t>(&Hooked));
+			REX::INFO("Auto-jump ready ({})", name);
 		}
 	}
 
@@ -1884,6 +1940,8 @@ namespace
 		float airTime{ 0.0f };
 		bool  jumpedThisAir{ false };
 		float maxFall{ 0.0f };  // fastest downward speed this time in the air (HL units/s)
+		hlmath::Vec2 lastOut{};  // what we told the game last step
+		bool  hasLastOut{ false };
 		float grace{ 0.0f };
 		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
 	} g_air;
@@ -1980,11 +2038,40 @@ namespace
 			g_air.jumpedThisAir = false;
 		}
 
-		const bool skip = g_cfg.mode == Mode::kVanilla || menus || g_swimming.load() ||
+		// Fallout asking for far more speed than any walk/run/sprint means something else is moving you
+		// (a mod's dash, a vehicle, a scripted launch): let Fallout do it.
+		const float vanillaSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
+		const bool  externalMove = vanillaSpeed > 2.0f * std::max(ClassSpeed(MoveClass::kSprint, true), 150.0f);
+
+		// footstep speed thresholds, scaled from Half-Life's to your current speeds
+		{
+			const bool  hl1 = SoundSet() == 1;
+			const bool  hlSpeeds = g_cfg.speedMode == 1;
+			const float walk = ClassSpeed(MoveClass::kWalk, false);
+			const float runS = ClassSpeed(MoveClass::kRun, false);
+			const float sprint = ClassSpeed(MoveClass::kSprint, false);
+			const float sneak = ClassSpeed(MoveClass::kSneak, false);
+			if (g_sneaking.load()) {
+				// HL: 60 / 80 while ducking
+				g_stepVelWalk = hlSpeeds ? 60.0f : 0.56f * sneak;
+				g_stepVelRun = hlSpeeds ? 80.0f : (hl1 ? 0.75f * sneak : 1.0e9f);
+			} else if (hl1) {
+				// HL1: 120 / 210 with walk 166 and run 320
+				g_stepVelWalk = hlSpeeds ? 120.0f : 0.72f * walk;
+				g_stepVelRun = hlSpeeds ? 210.0f : walk + 0.286f * (runS - walk);
+			} else {
+				// HL2: 90 / 220 with walk 150, run 190, sprint 320 (normal running uses walking steps)
+				g_stepVelWalk = hlSpeeds ? 90.0f : 0.6f * walk;
+				g_stepVelRun = hlSpeeds ? 220.0f : runS + 0.231f * (sprint - runS);
+			}
+		}
+
+		const bool skip = externalMove || g_cfg.mode == Mode::kVanilla || menus || g_swimming.load() ||
 		                  (g_inPowerArmor.load() && !g_cfg.enableInPowerArmor) || dt <= 0.0f || dt > 0.25f;
 		const bool airLocked = Perks::Unlock() && g_agility.load() < 5.0f;  // unlock mode: Agility 5 for air control
 		const bool airSim = !onGround && g_cfg.airControl && !airLocked;
 		if (skip || (!onGround && !airSim)) {
+			g_air.hasLastOut = false;
 			ResetSim(a_vel);
 			g_air.airborneSim = false;
 			g_stats.outSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
@@ -1992,81 +2079,109 @@ namespace
 			return g_origSetVel(a_this, a_vel);
 		}
 
-		// Something (a wall, an NPC, a door) took speed away: keep that loss, like HL's velocity clipping.
-		if (g_cfg.wallClip) {
-			const float simSpeed = std::hypot(g_sim.vx, g_sim.vy);
-			if (simSpeed > 1.0f && g_stats.actualSpeed < simSpeed * 0.9f) {
-				g_sim.vx = actual.x / g_cfg.unitScale;
-				g_sim.vy = actual.y / g_cfg.unitScale;
+		// ---- collisions and pushes: compare what the game actually did with what we asked for last step
+		{
+			const hlmath::Vec2 act{ actual.x / g_cfg.unitScale, actual.y / g_cfg.unitScale };
+			if (g_air.hasLastOut) {
+				const hlmath::Vec2 asked = g_air.lastOut;
+				const hlmath::Vec2 delta = act - asked;
+				const float        askedLen = asked.Length();
+				const float        actLen = act.Length();
+				if (delta.Length() > 5.0f) {
+					if (g_cfg.pushes && actLen > askedLen + g_cfg.pushThreshold) {
+						// something pushed you (hit, explosion, script): keep it as momentum, Half-Life style
+						SetSimVel(SimVel() + delta);
+						g_stats.pushes++;
+					} else if (g_cfg.wallClip && askedLen > 10.0f && actLen <= askedLen + 5.0f) {
+						// a wall/NPC/door took part of the motion: the removed part points into the surface.
+						// Remove that same part from our velocity (Source's ClipVelocity) so you slide along it.
+						const hlmath::Vec2 normal = (asked - act).Normalized();
+						const float        along = std::fabs(normal.Dot(asked.Normalized()));
+						const float        lost = 1.0f - actLen / askedLen;
+						// Straight-line losses under 50% are slopes and steps (Havok bends you along the ground),
+						// not walls: leave those alone so you don't slow down going uphill.
+						if (!(along > 0.95f && lost < 0.5f)) {
+							SetSimVel(hlmath::ClipVelocity(SimVel(), normal));
+							g_stats.clips++;
+						}
+					}
+				}
 			}
 		}
 
 		float accelMult, frictionMult;
 		WeightMults(accelMult, frictionMult);
 
-		float outX = 0.0f, outY = 0.0f;
+		// runs a step function at the chosen smoothness: every frame, or at Half-Life's tick (+ blending)
+		auto run = [&](auto&& a_step) {
+			if (g_cfg.smoothing == 2) {
+				a_step(dt);  // every physics step, real step time: no added delay
+				return SimVel();
+			}
+			g_sim.acc += dt;
+			int steps = 0;
+			while (g_sim.acc >= g_active.tick && steps < 16) {
+				g_sim.pvx = g_sim.vx;
+				g_sim.pvy = g_sim.vy;
+				a_step(g_active.tick);
+				g_sim.acc -= g_active.tick;
+				++steps;
+			}
+			if (steps == 16) {
+				g_sim.acc = 0.0f;
+			}
+			if (g_cfg.smoothing == 1) {
+				const float t = std::clamp(g_sim.acc / g_active.tick, 0.0f, 1.0f);
+				return hlmath::Vec2{ g_sim.pvx + (g_sim.vx - g_sim.pvx) * t, g_sim.pvy + (g_sim.vy - g_sim.pvy) * t };
+			}
+			return SimVel();
+		};
+
+		hlmath::Vec2 outV;
 		if (!onGround) {
 			// ---- in the air: Half-Life air control, momentum kept
 			if (!g_air.airborneSim) {
 				g_air.airborneSim = true;  // just left the ground: carry our ground velocity into the air
+				g_sim.pvx = g_sim.vx;
+				g_sim.pvy = g_sim.vy;
 			}
 			if (jumped) {
 				OnJump(wish);
+				g_sim.pvx = g_sim.vx;  // the jump boost is instant, don't blend it in
+				g_sim.pvy = g_sim.vy;
 			}
 			float airMult = 1.0f;
 			if (Perks::Bonus()) {
 				airMult *= std::clamp(1.0f + (g_agility.load() - 5.0f) * 0.04f, 0.8f, 1.25f);  // Agility
 			}
-			AirAccelerate(wish, dt, airMult);
-			outX = g_sim.vx;
-			outY = g_sim.vy;
-			g_sim.pvx = g_sim.vx;
-			g_sim.pvy = g_sim.vy;
-			g_sim.acc = 0.0f;
+			outV = run([&](float a_t) { AirAccelerate(wish, a_t, airMult); });
 		} else {
 			// ---- on the ground
 			g_air.airborneSim = false;
 			g_stats.groundCalls++;
 			const bool bhopAllowed = g_cfg.bhop && !(Perks::Unlock() && Perks::Rank(Perks::kMovingTarget) < 1);
 			if (landed && bhopAllowed) {
-				g_air.grace = g_cfg.bhopGrace;  // jump again in time and friction never touches you
+				// jump again in time and friction never touches you; Action Boy/Girl widens the window
+				const float perkBonus = Perks::Bonus() ? 0.025f * static_cast<float>(Perks::Rank(Perks::kActionBoy)) : 0.0f;
+				g_air.grace = g_cfg.bhopGrace + perkBonus;
+				const bool autoJump = g_cfg.autoJump == 2 || (g_cfg.autoJump == 1 && Perks::Bonus() && Perks::MaxRank(Perks::kActionBoy));
+				if (autoJump) {
+					g_autoJumpUntil = NowMs() + 150;  // the jump key handler re-jumps if you're holding jump
+				}
 			}
 			const float surface = SurfaceFrictionFor(a_this->supportMaterial, waterDepth);
-			auto step = [&](float a_t) {
+			outV = run([&](float a_t) {
 				if (g_air.grace > 0.0f) {
 					g_air.grace -= a_t;
 				} else {
 					Friction(a_t, frictionMult * surface);
 				}
 				Accelerate(wish.dirX, wish.dirY, wish.speed, a_t, accelMult * surface);
-			};
-			if (g_cfg.smoothing == 2) {
-				step(dt);  // every physics step, real step time: no added delay
-				outX = g_sim.vx;
-				outY = g_sim.vy;
-			} else {
-				g_sim.acc += dt;
-				int steps = 0;
-				while (g_sim.acc >= g_active.tick && steps < 16) {
-					g_sim.pvx = g_sim.vx;
-					g_sim.pvy = g_sim.vy;
-					step(g_active.tick);
-					g_sim.acc -= g_active.tick;
-					++steps;
-				}
-				if (steps == 16) {
-					g_sim.acc = 0.0f;
-				}
-				if (g_cfg.smoothing == 1) {
-					const float t = std::clamp(g_sim.acc / g_active.tick, 0.0f, 1.0f);
-					outX = g_sim.pvx + (g_sim.vx - g_sim.pvx) * t;
-					outY = g_sim.pvy + (g_sim.vy - g_sim.pvy) * t;
-				} else {
-					outX = g_sim.vx;
-					outY = g_sim.vy;
-				}
-			}
+			});
 		}
+		const float outX = outV.x, outY = outV.y;
+		g_air.lastOut = outV;
+		g_air.hasLastOut = true;
 
 		RE::hkVector4f out = a_vel;
 		out.x = outX * g_cfg.unitScale;
@@ -2136,6 +2251,7 @@ namespace
 		g_sim = Sim{};
 		g_air = AirState{};
 		g_input = InputState{};
+		g_autoJumpUntil = 0;
 		g_stats = Stats{};
 		Camera::Reset();
 		Sounds::OnGameLoaded();
@@ -2182,7 +2298,10 @@ namespace
 			ResetRuntimeState();
 			ScheduleInstall(600);
 			if (auto task = F4SE::GetTaskInterface()) {
-				task->AddTask([]() { Camera::Install(); });
+				task->AddTask([]() {
+					Camera::Install();
+					AutoJump::Install();
+				});
 			}
 			break;
 		default:

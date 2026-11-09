@@ -159,7 +159,16 @@
           "id": "bWallClip:General",
           "text": "Walls take your speed",
           "type": "switcher",
-          "help": "Running into a wall or NPC removes that speed, like in Half-Life.",
+          "help": "Walls, NPCs and doors take away the part of your speed that goes into them, and you slide along the rest, like in Half-Life.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bPushes:Air",
+          "text": "Pushes keep momentum",
+          "type": "switcher",
+          "help": "Hits, explosions and scripted pushes add to your momentum, Half-Life style, then friction slows them.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -391,12 +400,26 @@
           "id": "fBhopGrace:Air",
           "text": "Bunnyhop timing window",
           "type": "slider",
-          "help": "Seconds after landing before friction starts. The original games give one frame (HL2: 0.015 s). The default 0.10 is a more forgiving B.H.O.P. option that keeps much more speed.",
+          "help": "Seconds after landing before friction starts. Original games: one frame (0.015 s). Default 0.05 is a little more forgiving. Action Boy/Girl adds 0.025 s per rank.",
           "valueOptions": {
             "min": 0,
             "max": 0.3,
             "step": 0.01,
             "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "iAutoJump:Air",
+          "text": "Auto-jump",
+          "type": "dropdown",
+          "help": "Hold jump to keep bunnyhopping. With perk: unlocked by Action Boy/Action Girl at max rank.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "With perk",
+              "Always"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -642,9 +665,9 @@
         },
         {
           "id": "fSneakVolumeMult:Sounds",
-          "text": "Sneaking volume",
+          "text": "Extra sneaking volume",
           "type": "slider",
-          "help": "Multiplier while sneaking.",
+          "help": "Half-Life already makes ducking steps quieter (HL1 35%, HL2 65%). This multiplies on top. 1.0 = like Half-Life.",
           "valueOptions": {
             "min": 0,
             "max": 1,
@@ -660,9 +683,9 @@
           "id": "fRunStepSpeed:Sounds",
           "text": "Running steps from speed",
           "type": "slider",
-          "help": "Speed (HL units/s) where steps switch to running. Half-Life: 220. Default 140 fits Fallout's walk/run speeds; use 220 with Half-Life speeds.",
+          "help": "Speed (HL units/s) where steps switch to running. 0 = automatic: Half-Life's own thresholds scaled to your speeds.",
           "valueOptions": {
-            "min": 50,
+            "min": 0,
             "max": 320,
             "step": 5,
             "sourceType": "ModSettingFloat"
@@ -737,6 +760,10 @@
         },
         {
           "text": "Agility: better air control.",
+          "type": "text"
+        },
+        {
+          "text": "Action Boy / Action Girl: wider bunnyhop window; max rank unlocks auto-jump.",
           "type": "text"
         }
       ]

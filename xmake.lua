@@ -2,7 +2,7 @@
 includes("lib/commonlibf4")
 
 set_project("BHOP")
-set_version("1.0.1")
+set_version("1.1.0")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
@@ -26,3 +26,9 @@ target("BHOP")
     -- MCM menu + default settings
     add_installfiles("res/mcm/config.json", { prefixdir = "MCM/Config/BHOP" })
     add_installfiles("res/mcm/settings.ini", { prefixdir = "MCM/Config/BHOP" })
+
+-- Unit tests for the Half-Life math (src/HLMath.h). Run by the workflow: xmake build bhop_tests && xmake run bhop_tests
+target("bhop_tests")
+    set_kind("binary")
+    set_default(false)
+    add_files("tests/test_hlmath.cpp")
