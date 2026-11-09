@@ -1,7 +1,7 @@
 #pragma once
 
 #include <RE/Fallout.h>
-#include "HLMath.h"
+#include "core/HLMath.h"
 #include <F4SE/F4SE.h>
 
 #include <algorithm>

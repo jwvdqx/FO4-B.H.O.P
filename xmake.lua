@@ -20,7 +20,7 @@ target("BHOP")
     local root = os.scriptdir()
     local srcdir = os.isfile(path.join(root, "src", "main.cpp")) and "src" or "."
     add_files(srcdir .. "/main.cpp")
-    add_headerfiles(srcdir .. "/pch.h")
+    add_headerfiles(srcdir .. "/pch.h", srcdir .. "/core/*.h", srcdir .. "/fo4/*.h")
     add_includedirs(srcdir)
     set_pcxxheader(srcdir .. "/pch.h")
     -- MCM menu + default settings

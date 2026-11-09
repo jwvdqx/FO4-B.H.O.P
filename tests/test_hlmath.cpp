@@ -1,7 +1,7 @@
 // Unit tests for src/HLMath.h. Built and run by the GitHub workflow on every push.
 // Expected values are worked out by hand from Valve's formulas.
 
-#include "../src/HLMath.h"
+#include "../src/core/HLMath.h"
 
 #include <cstdio>
 #include <cstdlib>
