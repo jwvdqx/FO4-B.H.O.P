@@ -1941,6 +1941,8 @@ namespace
 		bool  jumpedThisAir{ false };
 		float maxFall{ 0.0f };  // fastest downward speed this time in the air (HL units/s)
 		hlmath::Vec2 lastOut{};  // what we told the game last step
+		float jumpStartZ{ 0.0f }, jumpPeakZ{ 0.0f }, jumpTakeoffVz{ 0.0f }, jumpTime{ 0.0f };
+		bool  measuring{ false };
 		bool  hasLastOut{ false };
 		float grace{ 0.0f };
 		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
@@ -2009,6 +2011,35 @@ namespace
 			g_stats.firstCalls++;
 			REX::INFO("call {}: dt {:.4f} (clock {:.4f}) state {} in ({:.3f}, {:.3f}, {:.3f}) actual ({:.3f}, {:.3f}, {:.3f}) flags {:08X}",
 				g_stats.firstCalls, dt, wallDt, state, a_vel.x, a_vel.y, a_vel.z, actual.x, actual.y, actual.z, a_this->flags);
+		}
+
+		// measurements for calibrating crouch-jump / gravity (debug log only)
+		if (g_cfg.debugLog) {
+			static bool logged = false;
+			if (!logged) {
+				logged = true;
+				REX::INFO("physics: gravity {:.3f} height {:.3f} radius {:.3f} scale {:.3f} actorHeight {:.3f} shapeType {}",
+					a_this->gravity, a_this->height, a_this->radius, a_this->scale, a_this->actorHeight,
+					static_cast<int>(a_this->shapeType.underlying()));
+			}
+			auto player = RE::PlayerCharacter::GetSingleton();
+			const float z = player ? player->data.location.z : 0.0f;
+			if (jumpedNow) {
+				g_air.jumpStartZ = z;
+				g_air.jumpPeakZ = z;
+				g_air.jumpTakeoffVz = a_vel.z;
+				g_air.jumpTime = 0.0f;
+				g_air.measuring = true;
+			} else if (g_air.measuring && !rawGround) {
+				g_air.jumpPeakZ = std::max(g_air.jumpPeakZ, z);
+				g_air.jumpTime += dt;
+			}
+			if (g_air.measuring && rawGround) {
+				g_air.measuring = false;
+				const float rise = g_air.jumpPeakZ - g_air.jumpStartZ;  // game units
+				REX::INFO("jump: takeoff {:.2f} m/s ({:.0f} HL u/s), peak +{:.1f} game units ({:.1f} HL units), air time {:.2f} s",
+					g_air.jumpTakeoffVz, g_air.jumpTakeoffVz / g_cfg.unitScale, rise, rise * (0.0254f * 69.99124f), g_air.jumpTime);
+			}
 		}
 
 		// one landing / takeoff event for sounds AND camera (each works without the other)
