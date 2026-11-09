@@ -301,6 +301,9 @@ namespace
 			ci.wallClip = g_cfg.wallClip;
 			ci.pushes = g_cfg.pushes;
 			ci.pushThreshold = g_cfg.pushThreshold;
+			ci.onGround = onGround;
+			ci.hasActualVz = g_air.hasMeasVz;
+			ci.actualVz = g_air.measVz / g_cfg.unitScale;
 			auto r = hlcore::Collide(ci);
 			// Real pushes are one-off shoves. A "push" on two steps in a row means the measurement is off
 			// (it would feed on itself and run your speed away): ignore it.
@@ -348,8 +351,9 @@ namespace
 			case hlcore::Contact::kKept:
 				if (log) {
 					++g_stats.detailLogs;
-					REX::INFO("no wall (direction kept): expected ({:.0f},{:.0f}){} actual ({:.0f},{:.0f}) floor ({:.2f},{:.2f},{:.2f})",
-						r.expected.x, r.expected.y, r.slope ? " slope" : "", act.x, act.y, gnx, gny, gnz);
+					REX::INFO("no wall ({}): expected ({:.0f},{:.0f}){} actual ({:.0f},{:.0f}) vertical {:.0f} floor ({:.2f},{:.2f},{:.2f})",
+						r.stepping ? "stepping" : "direction kept", r.expected.x, r.expected.y, r.slope ? " slope" : "", act.x, act.y,
+						g_air.measVz / g_cfg.unitScale, gnx, gny, gnz);
 				}
 				break;
 			default:

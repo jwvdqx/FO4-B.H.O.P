@@ -113,6 +113,9 @@ int main(int argc, char** argv)
 		ci.gny = v[18];
 		ci.gnz = v[19];
 		ci.sim = { v[21], v[22] };
+		ci.onGround = ground;
+		ci.hasActualVz = true;
+		ci.actualVz = v[38];
 		const int  rec = static_cast<int>(v[23]);
 		const auto r = hlcore::Collide(ci);
 		const int  now = static_cast<int>(r.kind);

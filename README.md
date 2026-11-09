@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.4.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.4.1)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -22,6 +22,8 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   you slid, so sliding along a wall keeps your forward speed. Optional wall probe (on by default, an
   experiment): rays check the real wall surface to get its exact direction.
 - Slopes use the floor direction the game reports, so going up or across a slope never counts as a wall.
+- Stairs and clutter: when the game is stepping you up or down, being slowed or bent for a moment isn't
+  treated as a wall, so you go up and over instead of being stopped or shoved sideways.
 - Pushes (hits, explosions, scripts) add to your momentum, Half-Life style. Scripted walks and anything
   moving you far faster than you can run are left to Fallout.
 - Short "airborne" moments on stairs count as ground.

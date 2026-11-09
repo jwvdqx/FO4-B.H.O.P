@@ -137,6 +137,11 @@ namespace hlcore
 		bool  wallClip{ true };
 		bool  pushes{ true };
 		float pushThreshold{ 60.0f };
+		// stairs and clutter: on the ground, the game lifting or dropping you (more than the floor's slope
+		// explains) means it's stepping you over something, not that you hit a wall
+		bool  onGround{ false };
+		bool  hasActualVz{ false };
+		float actualVz{ 0.0f };  // vertical speed you really moved at (HL units/s)
 	};
 
 	struct CollideResult
@@ -146,6 +151,7 @@ namespace hlcore
 		Vec2    normal{};    // wall direction (into the wall) for kWall
 		Vec2    expected{};  // what we expected you to move at (asked, bent along the slope)
 		bool    slope{ false };  // expected came from the slope model
+		bool    stepping{ false };  // the game was stepping you up or down (stairs, clutter)
 	};
 
 	// On a slope the game bends your motion along the ground: v - n*(v.n) when you push into it.
@@ -190,6 +196,16 @@ namespace hlcore
 		}
 		if (!a_in.wallClip || expLen <= 10.0f || actLen > expLen * 1.15f + 5.0f) {
 			return r;
+		}
+		// Stepping over stairs or clutter bends and slows you for a moment: leave your speed alone, so you go
+		// up and over instead of being shoved sideways or stopped. (Really blocked = less than half the speed.)
+		if (a_in.onGround && a_in.hasActualVz && actLen >= 0.5f * expLen) {
+			const float slopeVz = a_in.hasGround && a_in.gnz > 0.5f ? -(a_in.gnx * a_in.actual.x + a_in.gny * a_in.actual.y) / a_in.gnz : 0.0f;
+			if (std::fabs(a_in.actualVz - slopeVz) > 30.0f) {
+				r.kind = Contact::kKept;
+				r.stepping = true;
+				return r;
+			}
 		}
 		const Vec2 n = hlmath::WallNormal(exp, a_in.actual);
 		if (n.Length() < 0.5f) {

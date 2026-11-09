@@ -275,6 +275,28 @@ int main()
 		Near(r.sim.Length(), c.asked.Length(), 1e-3, "slope: no speed taken");
 		c.hasGround = false;
 
+		// stairs/clutter: the game lifts you while bending you sideways: not a wall
+		c.asked = { 300.0f, 0.0f };
+		c.actual = { 270.0f, 60.0f };
+		c.sim = c.asked;
+		c.onGround = true;
+		c.hasActualVz = true;
+		c.actualVz = 150.0f;
+		r = hlcore::Collide(c);
+		Check(r.stepping && r.kind == Contact::kKept, "stairs: stepping up is not a wall", static_cast<double>(r.kind), 1.0);
+		Near(r.sim.x, 300.0, 1e-3, "stairs: no speed taken, no sideways shove");
+		// same bend with no lift on flat ground: that IS a wall
+		c.actualVz = 0.0f;
+		r = hlcore::Collide(c);
+		Check(r.kind == Contact::kWall, "stairs: no lift on flat ground = wall", static_cast<double>(r.kind), 2.0);
+		// stepping but nearly stopped: really blocked, still a wall
+		c.actual = { 60.0f, 20.0f };
+		c.actualVz = 150.0f;
+		r = hlcore::Collide(c);
+		Check(r.kind == Contact::kWall, "stairs: blocked while lifted is still a wall", static_cast<double>(r.kind), 2.0);
+		c.onGround = false;
+		c.hasActualVz = false;
+
 		// the probe's surface direction replaces the guess only when they roughly agree
 		Vec2 n = hlcore::RefineNormal({ 0.0f, 1.0f }, { 0.2f, 0.98f });
 		Near(n.x, 0.2 / std::hypot(0.2, 0.98), 1e-4, "probe: close direction is used");
