@@ -2,7 +2,12 @@ name: Build BHOP
 
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -58,3 +63,27 @@ jobs:
           path: |
             dist/**
             build/windows/x64/releasedbg/*.dll
+
+      - name: Make release zip
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse dist | Select-Object FullName
+          $root = Get-ChildItem dist -Directory | Select-Object -First 1
+          Compress-Archive -Path (Join-Path $root.FullName '*') -DestinationPath "BHOP-${{ github.ref_name }}.zip"
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: B.H.O.P. ${{ github.ref_name }}
+          prerelease: true
+          files: BHOP-${{ github.ref_name }}.zip
+          body: |
+            Boston Hopping Overhaul Project - test build for Fallout 4 1.11.240 (F4SE 0.7.9).
+
+            Install with your mod manager, or extract into the Fallout 4 folder.
+            Requires F4SE and Address Library for F4SE Plugins.
+
+            Half-Life sound files are not included; install your own copy into
+            Data\Sound\FX\BHOP\HL1 and HL2 (see README).
