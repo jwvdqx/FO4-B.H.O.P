@@ -4,7 +4,13 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -78,6 +84,7 @@ jobs:
         with:
           name: B.H.O.P. ${{ github.ref_name }}
           prerelease: true
+          overwrite_files: true
           files: BHOP-${{ github.ref_name }}.zip
           body: |
             Boston Hopping Overhaul Project - test build for Fallout 4 1.11.240 (F4SE 0.7.9).
