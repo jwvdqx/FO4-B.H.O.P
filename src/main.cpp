@@ -41,6 +41,7 @@ namespace
 		bool debugLog{ true };
 		bool enableInPowerArmor{ true };
 		bool wallClip{ true };
+		bool customGround{ false };  // false = use the selected game's friction/accelerate/stop speed
 
 		// negative = use the mode's default
 		float friction{ -1.0f };
@@ -116,11 +117,12 @@ namespace
 		return v == "1" || v == "true" || v == "True" || v == "TRUE";
 	}
 
-	void LoadConfig()
+	// Reads one ini file; later files override earlier ones.
+	bool ReadIni(const char* a_path)
 	{
-		std::ifstream f("Data/F4SE/Plugins/BHOP.ini");
+		std::ifstream f(a_path);
 		if (!f) {
-			REX::INFO("No ini found, using defaults");
+			return false;
 		} else {
 			std::string line;
 			while (std::getline(f, line)) {
@@ -162,6 +164,7 @@ namespace
 					B("bDebugLog", g_cfg.debugLog);
 					B("bEnableInPowerArmor", g_cfg.enableInPowerArmor);
 					B("bWallClip", g_cfg.wallClip);
+					B("bCustomGround", g_cfg.customGround);
 					F("fFriction", g_cfg.friction);
 					F("fAccelerate", g_cfg.accelerate);
 					F("fStopSpeed", g_cfg.stopSpeed);
@@ -198,11 +201,22 @@ namespace
 				}
 			}
 		}
+		return true;
+	}
+
+	// Defaults ship in MCM\Config\BHOP\settings.ini; MCM saves changes to MCM\Settings\BHOP.ini.
+	void LoadConfig()
+	{
+		g_cfg.materialOverrides.clear();
+		const bool defaults = ReadIni("Data/MCM/Config/BHOP/settings.ini");
+		const bool user = ReadIni("Data/MCM/Settings/BHOP.ini");
+		REX::INFO("Settings: defaults {}, MCM changes {}", defaults ? "found" : "MISSING", user ? "found" : "none yet");
 
 		const auto& d = g_cfg.mode == Mode::kHL1 ? kHL1Defaults : kHL2Defaults;
-		g_active.friction = g_cfg.friction >= 0.0f ? g_cfg.friction : d.friction;
-		g_active.accelerate = g_cfg.accelerate >= 0.0f ? g_cfg.accelerate : d.accelerate;
-		g_active.stopSpeed = g_cfg.stopSpeed >= 0.0f ? g_cfg.stopSpeed : d.stopSpeed;
+		const bool  custom = g_cfg.customGround;
+		g_active.friction = custom && g_cfg.friction >= 0.0f ? g_cfg.friction : d.friction;
+		g_active.accelerate = custom && g_cfg.accelerate >= 0.0f ? g_cfg.accelerate : d.accelerate;
+		g_active.stopSpeed = custom && g_cfg.stopSpeed >= 0.0f ? g_cfg.stopSpeed : d.stopSpeed;
 		const float rate = g_cfg.tickRate > 0.0f ? g_cfg.tickRate : d.tickRate;
 		g_active.tick = 1.0f / std::clamp(rate, 20.0f, 500.0f);
 		if (g_cfg.unitScale <= 0.0f) {
@@ -1225,11 +1239,39 @@ namespace
 		});
 	}
 
+	// MCM lives in the pause menu: when it closes, read the settings again so changes apply right away.
+	void ReloadSettings()
+	{
+		{
+			std::scoped_lock lock(g_simLock);
+			LoadConfig();
+		}
+		Sounds::BuildMaterials();
+		Sounds::InstallFootstepHook();
+	}
+
+	class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+	{
+	public:
+		RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+		{
+			if (!a_event.opening && (a_event.menuName == "PauseMenu"sv || a_event.menuName == "MainMenu"sv)) {
+				if (auto task = F4SE::GetTaskInterface()) {
+					task->AddTask([]() { ReloadSettings(); });
+				}
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	} g_menuSink;
+
 	void OnMessage(F4SE::MessagingInterface::Message* a_msg)
 	{
 		switch (a_msg->type) {
 		case F4SE::MessagingInterface::kGameDataReady:
 			Sounds::Init();
+			if (auto ui = RE::UI::GetSingleton()) {
+				ui->RegisterSink<RE::MenuOpenCloseEvent>(&g_menuSink);
+			}
 			break;
 		case F4SE::MessagingInterface::kPostLoadGame:
 		case F4SE::MessagingInterface::kNewGame:

@@ -1,0 +1,416 @@
+{
+  "modName": "BHOP",
+  "displayName": "B.H.O.P.",
+  "minMcmVersion": 2,
+  "content": [
+    {
+      "text": "<font size='24'>Boston Hopping Overhaul Project</font>",
+      "type": "text"
+    },
+    {
+      "text": "Half-Life 1 and 2 player movement and sounds.",
+      "type": "text"
+    },
+    {
+      "text": "Changes apply when you close the menu.",
+      "type": "text"
+    },
+    {
+      "text": "Quick settings",
+      "type": "section"
+    },
+    {
+      "id": "iMode:General",
+      "text": "Movement",
+      "type": "dropdown",
+      "help": "Vanilla Fallout 4, Half-Life 1 or Half-Life 2 movement for the player.",
+      "valueOptions": {
+        "options": [
+          "Vanilla",
+          "Half-Life 1",
+          "Half-Life 2"
+        ],
+        "sourceType": "ModSettingInt"
+      }
+    },
+    {
+      "id": "bHalfLifeSounds:Sounds",
+      "text": "Half-Life sounds",
+      "type": "switcher",
+      "help": "Half-Life footsteps, jump and landing sounds for the player.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "pageDisplayName": "Movement",
+      "content": [
+        {
+          "text": "Mode",
+          "type": "section"
+        },
+        {
+          "id": "iMode:General",
+          "text": "Movement",
+          "type": "dropdown",
+          "help": "Vanilla Fallout 4, Half-Life 1 or Half-Life 2 movement for the player.",
+          "valueOptions": {
+            "options": [
+              "Vanilla",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "bEnableInPowerArmor:General",
+          "text": "Half-Life movement in Power Armor",
+          "type": "switcher",
+          "help": "Off: Power Armor moves like vanilla.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bWallClip:General",
+          "text": "Walls take your speed",
+          "type": "switcher",
+          "help": "Running into a wall or NPC removes that speed, like in Half-Life.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "text": "Ground",
+          "type": "section"
+        },
+        {
+          "id": "bCustomGround:Ground",
+          "text": "Use custom values",
+          "type": "switcher",
+          "help": "Off: use the selected game's own values (friction 4, accelerate 10, stop speed 100).",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fFriction:Ground",
+          "text": "Friction",
+          "type": "slider",
+          "help": "How quickly you slow down when you let go. Half-Life: 4.",
+          "valueOptions": {
+            "min": 0.5,
+            "max": 12,
+            "step": 0.5,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fAccelerate:Ground",
+          "text": "Acceleration",
+          "type": "slider",
+          "help": "How quickly you reach full speed. Half-Life: 10.",
+          "valueOptions": {
+            "min": 1,
+            "max": 30,
+            "step": 0.5,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fStopSpeed:Ground",
+          "text": "Stop speed",
+          "type": "slider",
+          "help": "Below this speed friction brings you to a stop faster. Half-Life: 100.",
+          "valueOptions": {
+            "min": 0,
+            "max": 300,
+            "step": 5,
+            "sourceType": "ModSettingFloat"
+          }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Weight",
+      "content": [
+        {
+          "text": "Carry weight",
+          "type": "section"
+        },
+        {
+          "id": "bCarryWeightAffectsMovement:Weight",
+          "text": "Carry weight affects movement",
+          "type": "switcher",
+          "help": "The fuller your inventory, the slower you start, turn and stop.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fFullLoadAccelMult:Weight",
+          "text": "Acceleration at full load",
+          "type": "slider",
+          "help": "1.0 = no change, 0.5 = half.",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fOverencumberedAccelMult:Weight",
+          "text": "Acceleration when over-encumbered",
+          "type": "slider",
+          "help": "1.0 = no change.",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fFullLoadFrictionMult:Weight",
+          "text": "Friction at full load",
+          "type": "slider",
+          "help": "Lower = slide a little more when stopping.",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Power Armor",
+          "type": "section"
+        },
+        {
+          "id": "fPowerArmorAccelMult:Weight",
+          "text": "Power Armor acceleration",
+          "type": "slider",
+          "help": "Extra multiplier in Power Armor.",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fPowerArmorFrictionMult:Weight",
+          "text": "Power Armor friction",
+          "type": "slider",
+          "help": "Extra multiplier in Power Armor.",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Sounds",
+      "content": [
+        {
+          "text": "Half-Life sounds",
+          "type": "section"
+        },
+        {
+          "id": "bHalfLifeSounds:Sounds",
+          "text": "Half-Life sounds",
+          "type": "switcher",
+          "help": "Half-Life footsteps, jump and landing sounds for the player.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iSoundSet:Sounds",
+          "text": "Sound set",
+          "type": "dropdown",
+          "help": "Follow movement: HL1 mode uses HL1 sounds, HL2 mode uses HL2 sounds, Vanilla has none. Or pick one to always use.",
+          "valueOptions": {
+            "options": [
+              "Follow movement",
+              "Half-Life 1",
+              "Half-Life 2"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "bMuteVanillaPlayerFootsteps:Sounds",
+          "text": "Mute vanilla player footsteps",
+          "type": "switcher",
+          "help": "Only the player's. NPC footsteps are never touched.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bJumpLandSounds:Sounds",
+          "text": "Jump and landing sounds",
+          "type": "switcher",
+          "help": "Floor sound when you jump and land, like Half-Life.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bWaterSounds:Sounds",
+          "text": "Shallow water sounds",
+          "type": "switcher",
+          "help": "Slosh and wade sounds in shallow water.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bSwimSounds:Sounds",
+          "text": "Swim sounds",
+          "type": "switcher",
+          "help": "Half-Life swim sounds. Fallout already has its own.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bPowerArmorHardboot:Sounds",
+          "text": "Power Armor boots (HL2)",
+          "type": "switcher",
+          "help": "Half-Life 2 set only: Power Armor steps use the Combine boot sounds.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bHL1FallPainSound:Sounds",
+          "text": "Fall pain sound (HL1)",
+          "type": "switcher",
+          "help": "Half-Life 1 set only: pl_fallpain3 on a hard fall.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "text": "Volume",
+          "type": "section"
+        },
+        {
+          "id": "fVolume:Sounds",
+          "text": "Volume",
+          "type": "slider",
+          "help": "All Half-Life sounds. 1.0 = as loud as Half-Life plays them.",
+          "valueOptions": {
+            "min": 0,
+            "max": 2,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fRunVolume:Sounds",
+          "text": "Running step volume",
+          "type": "slider",
+          "help": "Half-Life: 0.5",
+          "valueOptions": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fWalkVolume:Sounds",
+          "text": "Walking step volume",
+          "type": "slider",
+          "help": "Half-Life: 0.2",
+          "valueOptions": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fSneakVolumeMult:Sounds",
+          "text": "Sneaking volume",
+          "type": "slider",
+          "help": "Multiplier while sneaking.",
+          "valueOptions": {
+            "min": 0,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "text": "Timing",
+          "type": "section"
+        },
+        {
+          "id": "fRunStepSpeed:Sounds",
+          "text": "Running steps from speed",
+          "type": "slider",
+          "help": "Speed (Half-Life units/s) where steps switch to running. Half-Life: 220.",
+          "valueOptions": {
+            "min": 50,
+            "max": 320,
+            "step": 5,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fRunStepInterval:Sounds",
+          "text": "Running step time",
+          "type": "slider",
+          "help": "Seconds between steps. Half-Life: 0.3",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fWalkStepInterval:Sounds",
+          "text": "Walking step time",
+          "type": "slider",
+          "help": "Seconds between steps. Half-Life: 0.4",
+          "valueOptions": {
+            "min": 0.1,
+            "max": 1,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Debug",
+      "content": [
+        {
+          "text": "Debug",
+          "type": "section"
+        },
+        {
+          "id": "bDebugLog:General",
+          "text": "Debug log",
+          "type": "switcher",
+          "help": "Writes test info to Documents\\My Games\\Fallout4\\F4SE\\BHOP.log.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        }
+      ]
+    }
+  ]
+}

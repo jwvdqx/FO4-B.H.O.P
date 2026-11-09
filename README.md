@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.2.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (test build v0.3.0)
 
 Half-Life 1 and 2 player movement and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 
@@ -20,7 +20,14 @@ Half-Life 1 and 2 player movement and sounds for Fallout 4 (runtime 1.11.240, F4
   Project Reality Footsteps) are left alone.
 - Our sounds reuse the vanilla footstep "output model", so they get the same reverb and
   distance settings as normal footsteps, including changes from reverb mods.
-- Toggle: `bHalfLifeSounds` in the ini. `iSoundSet` picks HL1/HL2/follow the movement mode.
+- Toggle: Mod Config -> B.H.O.P. -> Sounds (or `bHalfLifeSounds`).
+
+## Settings (MCM)
+
+Pause menu -> Mod Config -> **B.H.O.P.**: movement mode, Power Armor, ground values, weight,
+sounds, volume and timing. Changes apply when you close the menu.
+Defaults: `Data\MCM\Config\BHOP\settings.ini`. Your changes: `Data\MCM\Settings\BHOP.ini`.
+Surface overrides (`Material.<name>=<sound>`) can be added to either file.
 
 ## Build
 
@@ -29,7 +36,8 @@ Download the **BHOP** artifact.
 
 ## Install
 
-- `BHOP.dll` and `BHOP.ini` -> `Fallout 4\Data\F4SE\Plugins\`
+- Install the release zip with your mod manager (or extract into `Fallout 4\`). It contains
+  `Data\F4SE\Plugins\BHOP.dll` and `Data\MCM\Config\BHOP\`. Requires F4SE, Address Library and MCM.
 - The sounds zip -> extract into `Fallout 4\` so you get
   `Data\Sound\FX\BHOP\HL1\` and `...\HL2\` (keep them as loose files, not in a BA2).
 
