@@ -1,0 +1,40 @@
+name: Build BHOP
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CommonLibF4 (supports Fallout 4 1.11.240)
+        shell: pwsh
+        run: |
+          git clone --recurse-submodules https://github.com/libxse/commonlibf4 lib/commonlibf4
+          cd lib/commonlibf4
+          git checkout 7c8c6f8a349ac85abf6fc8a7e5a71732d9339954
+          git submodule update --init --recursive
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Build
+        shell: pwsh
+        env:
+          XSE_FO4_MODS_PATH: ${{ github.workspace }}\dist
+        run: |
+          xmake f -m releasedbg -y
+          xmake build -y
+          xmake install -y
+
+      - name: Upload mod folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: BHOP
+          path: |
+            dist/**
+            build/windows/x64/releasedbg/*.dll
