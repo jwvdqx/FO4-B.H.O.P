@@ -778,7 +778,7 @@ namespace
 			const RE::NiPoint3 end(start.x, start.y, start.z - down - 2.0f);
 			RE::bhkPickData pick;
 			pick.SetStartEnd(start, end);
-			cell->Pick(pick);
+			static_cast<void>(cell->Pick(pick));
 			if (pick.HasHit()) {
 				++hits;
 			}
