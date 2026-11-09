@@ -13,6 +13,79 @@ namespace hlcore
 	using hlmath::Vec2;
 
 	// ---------------------------------------------------------------------
+	// Half-Life swimming (PM_WaterMove / CGameMovement::WaterMove)
+	// ---------------------------------------------------------------------
+	struct Vec3
+	{
+		float x{ 0.0f }, y{ 0.0f }, z{ 0.0f };
+		Vec3  operator+(Vec3 o) const { return { x + o.x, y + o.y, z + o.z }; }
+		Vec3  operator*(float s) const { return { x * s, y * s, z * s }; }
+		float Length() const { return std::sqrt(x * x + y * y + z * z); }
+	};
+
+	inline constexpr float kWaterJumpSpeed = 100.0f;  // holding jump with your waist in water: PM_Jump / CheckJumpButton
+	inline constexpr float kWaterSink = 60.0f;        // no input: drift toward the bottom
+
+	// What you want to swim at: the view's forward (pitch included) and right, times the stick.
+	// HL1: no input = sink. HL2 also: jump held = swim up, and swimming forward while looking up rises more.
+	inline Vec3 WaterWish(bool a_hl2, Vec3 a_forward, Vec2 a_right, float a_forwardMove, float a_sideMove, bool a_jump, float a_maxSpeed)
+	{
+		Vec3       w{ a_forward.x * a_forwardMove + a_right.x * a_sideMove, a_forward.y * a_forwardMove + a_right.y * a_sideMove, a_forward.z * a_forwardMove };
+		const bool noInput = a_forwardMove == 0.0f && a_sideMove == 0.0f;
+		if (a_hl2) {
+			if (a_jump) {
+				w.z += a_maxSpeed;
+			} else if (noInput) {
+				w.z -= kWaterSink;
+			} else {
+				w.z += std::clamp(a_forwardMove * a_forward.z * 2.0f, 0.0f, a_maxSpeed);
+			}
+		} else if (noInput) {
+			w.z -= kWaterSink;
+		}
+		return w;
+	}
+
+	// One step of swimming: speed capped to max and then cut to 80%, water friction on the whole 3D speed,
+	// then acceleration toward the wish (like ground acceleration, but in 3D).
+	inline Vec3 WaterMove(Vec3 a_vel, Vec3 a_wish, float a_maxSpeed, float a_friction, float a_accelerate, float a_surface, float a_dt)
+	{
+		float      wishSpeed = a_wish.Length();
+		const Vec3 wishDir = wishSpeed > 1e-6f ? a_wish * (1.0f / wishSpeed) : Vec3{};
+		if (wishSpeed > a_maxSpeed) {
+			wishSpeed = a_maxSpeed;
+		}
+		wishSpeed *= 0.8f;
+
+		const float speed = a_vel.Length();
+		float       newSpeed = 0.0f;
+		if (speed > 0.0f) {
+			newSpeed = speed - a_dt * speed * a_friction * a_surface;
+			if (newSpeed < 0.1f) {
+				newSpeed = 0.0f;
+			}
+			a_vel = a_vel * (newSpeed / speed);
+		}
+		if (wishSpeed >= 0.1f) {
+			const float addSpeed = wishSpeed - newSpeed;
+			if (addSpeed > 0.0f) {
+				const float accelSpeed = std::min(a_accelerate * wishSpeed * a_dt * a_surface, addSpeed);
+				a_vel = a_vel + wishDir * accelSpeed;
+			}
+		}
+		return a_vel;
+	}
+
+	// Water surfing: holding jump with your waist in water pushes you up at 100 u/s every time you dip in
+	// (PM_Jump / CheckJumpButton), so you spend most of the time just above the water, moving like in the
+	// air (no friction, air strafing), and only a moment in it. This is the share of time spent in the water:
+	// one step in, then up and back down: 2 * 100 / gravity seconds out.
+	inline float SurfInWater(float a_tick, float a_gravity)
+	{
+		return a_tick / (a_tick + 2.0f * kWaterJumpSpeed / std::max(a_gravity, 1.0f));
+	}
+
+	// ---------------------------------------------------------------------
 	// one movement step
 	// ---------------------------------------------------------------------
 	struct Params
@@ -37,6 +110,9 @@ namespace hlcore
 		float accelMult{ 1.0f };     // weight, Power Armor, surface
 		float airAccelMult{ 1.0f };  // perks
 		float airSurface{ 1.0f };    // HL2: 0.25 while rising slowly
+		int   water{ 0 };            // 0 = not in water, 1 = swimming (WaterMove), 2 = water surfing
+		float waterMax{ 320.0f };    // swimming: your max speed (you swim at 80% of it)
+		float surfInWater{ 0.04f };  // water surfing: share of the time spent in the water (SurfInWater)
 	};
 
 	struct State
@@ -74,6 +150,23 @@ namespace hlcore
 	// One Half-Life step: ground = friction (unless in the bunnyhop window) then accelerate; air = air accelerate.
 	inline void Step(State& a_s, const StepInput& a_in, const Params& a_p, float a_dt)
 	{
+		if (a_in.water == 1) {
+			// swimming, flat: Fallout keeps your up and down (floating, diving)
+			const Vec3 wish{ a_in.wishDir.x * a_in.wishSpeed, a_in.wishDir.y * a_in.wishSpeed, 0.0f };
+			const Vec3 v = WaterMove({ a_s.vel.x, a_s.vel.y, 0.0f }, wish, a_in.waterMax, a_p.friction, a_p.accelerate, 1.0f, a_dt);
+			a_s.vel = { v.x, v.y };
+			return;
+		}
+		if (a_in.water == 2) {
+			// water surfing: moving like in the air, with water friction only for the moments you dip in
+			a_s.vel = AirAccelerate(a_s.vel, a_in, a_p, a_dt);
+			const float speed = a_s.vel.Length();
+			if (speed > 0.0f) {
+				const float newSpeed = std::max(0.0f, speed - a_dt * speed * a_p.friction * a_in.surfInWater);
+				a_s.vel = a_s.vel * (newSpeed / speed);
+			}
+			return;
+		}
 		if (a_in.ground) {
 			if (a_s.grace > 0.0f) {
 				a_s.grace -= a_dt;
@@ -246,4 +339,5 @@ namespace hlcore
 		a_vz -= a_g * a_dt;
 		return during;
 	}
+
 }

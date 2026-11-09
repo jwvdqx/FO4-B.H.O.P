@@ -33,7 +33,10 @@ namespace
 		bool debugLog{ false };
 		bool enableInPowerArmor{ true };
 		bool wallClip{ true };
-		bool wallProbe{ true };       // check the real wall surface to fine-tune the wall direction (experiment)
+		bool wallProbe{ true };
+		int  swimMode{ 1 };           // 0 = Fallout swimming, 1 = Half-Life swimming (flat; Fallout keeps floating and diving)
+		bool waterSurf{ true };       // hold jump at the surface while fast: skim along the water like Half-Life
+		bool sprintSound{ true };     // HL2 suit sound when you start sprinting       // check the real wall surface to fine-tune the wall direction (experiment)
 		int  jumpPhysics{ 0 };        // 0 = Fallout jump and gravity, 1 = HL gravity with Fallout's jump height, 2 = exact HL
 		bool record{ false };         // write a movement recording after closing the pause menu
 		float recordSeconds{ 15.0f };
@@ -110,7 +113,7 @@ namespace
 		bool  muteVanillaFootsteps{ true };
 		bool  jumpLandSounds{ true };
 		bool  waterSounds{ true };
-		bool  swimSounds{ false };
+		bool  swimSounds{ true };
 		bool  powerArmorHardboot{ true };
 		bool  hl1FallPain{ true };
 		bool  useVanillaOutput{ true };  // reuse the vanilla footstep output model (reverb, distance)
@@ -238,6 +241,11 @@ namespace
 					B("bEnableInPowerArmor", g_cfg.enableInPowerArmor);
 					B("bWallClip", g_cfg.wallClip);
 					B("bWallProbe", g_cfg.wallProbe);
+					B("bWaterSurf", g_cfg.waterSurf);
+					B("bSprintSound", g_cfg.sprintSound);
+					if (key == "iSwimMode") {
+						g_cfg.swimMode = std::clamp(std::stoi(val), 0, 1);
+					}
 					B("bRecord", g_cfg.record);
 					F("fRecordSeconds", g_cfg.recordSeconds);
 					for (int i = 0; i < 17; ++i) {

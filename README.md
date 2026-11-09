@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.4.2)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.5.0)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -41,6 +41,12 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   duck-jump: HL1 +18 units, HL2 +36 units, or scaled to Fallout's own jump. You land sneaking, like HL keeps
   you ducked. Fallout can't shrink your body mid-air, so this is an upward boost giving the same extra height;
   normal physics still stops you at ceilings.
+- **Swimming** (Half-Life by default): swim speed (80% of running), momentum and water friction like
+  Half-Life, so you keep your speed when you land in water and the water slows you. Fallout still handles
+  floating and diving.
+- **Water surfing**: hold jump at the surface while faster than you can swim and you skim along keeping your
+  speed, like Half-Life (where holding jump pushes you up each time you dip in). You can air strafe while
+  surfing.
 - Edge friction (optional, off by default): Half-Life 1 doubles friction when there's no floor just ahead,
   so you stop at ledges. Checked with three rays across your width, 16 units ahead and 34 down, like HL1.
 - **Jumping and gravity** (optional, off by default): Half-Life gravity with Fallout's jump height (same
@@ -56,6 +62,9 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 
 - Half-Life 1/2 footsteps, jump and landing sounds by surface, timed like Half-Life; vanilla player footsteps
   muted (NPCs untouched). Same reverb as vanilla footsteps (works with reverb mods). Sounds follow you.
+- **Water sounds** (Half-Life's rules): getting in and out of water, holding jump in water (once a second),
+  HL1 underwater bubbles (more often as your air runs out), gasping for air after a long dive, and drowning
+  sounds when Fallout's drowning hurts you. HL2 sprint sound and HL2 fall pain too.
 - **Sounds by surface**: each surface (wood, grass, metal, water, Power Armor...) can use Half-Life 1's or
   Half-Life 2's sounds, whatever the main sound set. Example: HL1 mode with HL2's wood steps (HL1 has none).
   Step timing and volume still follow the main sound set.
@@ -81,8 +90,8 @@ Loose `.wav` (or `.xwm`) files, 16-bit mono recommended, named `<group><number>.
 
 | Folder | Groups (file names) |
 |---|---|
-| `Data\Sound\FX\BHOP\HL1\` | `pl_step1-4` (concrete), `pl_metal1-4`, `pl_dirt1-4`, `pl_duct1-4`, `pl_grate1-4`, `pl_tile1-5`, `pl_slosh1-4`, `pl_wade1-4`, `pl_ladder1-4`, `pl_swim1-4`, `pl_fallpain1`/`pl_fallpain3` |
-| `Data\Sound\FX\BHOP\HL2\` | `concrete1-4`, `metal1-4`, `metalgrate1-4`, `chainlink1-4`, `duct1-4`, `wood1-4`, `woodpanel1-4`, `grass1-4`, `gravel1-4`, `mud1-4`, `sand1-4`, `dirt1-4`, `tile1-4`, `slosh1-4`, `wade1-4`, `ladder1-4`, `hardboot_generic1-9` (Power Armor), `softshoe_generic1-8` (carpet) |
+| `Data\Sound\FX\BHOP\HL1\` | `pl_step1-4` (concrete), `pl_metal1-4`, `pl_dirt1-4`, `pl_duct1-4`, `pl_grate1-4`, `pl_tile1-5`, `pl_slosh1-4`, `pl_wade1-4`, `pl_ladder1-4`, `pl_swim1-4` (underwater bubbles), `pl_fallpain1`/`pl_fallpain3`, `pl_pain2` (drowning) |
+| `Data\Sound\FX\BHOP\HL2\` | `concrete1-4`, `metal1-4`, `metalgrate1-4`, `chainlink1-4`, `duct1-4`, `wood1-4`, `woodpanel1-4`, `grass1-4`, `gravel1-4`, `mud1-4`, `sand1-4`, `dirt1-4`, `tile1-4`, `slosh1-4`, `wade1-4`, `ladder1-4`, `hardboot_generic1-9` (Power Armor), `softshoe_generic1-8` (carpet), `wade5-8` (swimming), `pl_drown1-3` (drowning, gasping for air), `pl_fallpain1`/`pl_fallpain3`, `suit_sprint` (sprint start) |
 
 Groups with exactly 4 files use Half-Life's left/right pattern (1/3 left, 2/4 right); others play a random
 file. A missing group falls back to concrete (`concrete` / `pl_step`). The log lists which surface uses
@@ -105,6 +114,9 @@ chain with other plugins that changed the same functions. Problems are written t
 - Wall and push detection compare how far you really moved with what the mod asked for; the game gives no
   wall direction, so it's worked out from your motion (and the optional wall probe).
 - Perks are found by name (English by default; change the names in the settings file for other languages).
+- Water surfing doesn't bob you in and out of the water like Half-Life (Fallout holds you at the surface);
+  your speed behaves the same way (worked out from Half-Life's bobbing and checked in the tests).
+- Swimming is flat: Fallout keeps floating and diving.
 - No speedometer yet.
 
 ## Code layout

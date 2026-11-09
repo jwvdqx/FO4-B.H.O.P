@@ -37,6 +37,7 @@ namespace
 		g_landSneak = false;
 		g_edgeAhead = false;
 		g_stats = Stats{};
+		Sounds::g_water = Sounds::WaterState{};
 		Camera::Reset();
 		Sounds::OnGameLoaded();
 	}

@@ -23,6 +23,16 @@ namespace
 		std::uint32_t                                   g_playerHandle{ 0 };
 		std::atomic_bool                                g_ready{ false };
 
+		// the files for this group are installed
+		bool HasGroup(int a_set, const std::string& a_group)
+		{
+			if (a_set < 1 || a_set > 2) {
+				return false;
+			}
+			const auto it = g_groups[a_set].find(a_group);
+			return it != g_groups[a_set].end() && !it->second.files.empty();
+		}
+
 		// category -> group name, per set
 		std::string GroupFor(int a_set, const std::string& a_cat)
 		{
@@ -43,7 +53,7 @@ namespace
 				{ "duct", "duct" }, { "wood", "wood" }, { "woodpanel", "woodpanel" }, { "grass", "grass" },
 				{ "gravel", "gravel" }, { "mud", "mud" }, { "sand", "sand" }, { "snow", "gravel" },
 				{ "dirt", "dirt" }, { "tile", "tile" }, { "slosh", "slosh" }, { "wade", "wade" },
-				{ "ladder", "ladder" }, { "carpet", "softshoe_generic" }, { "swim", "wade" }, { "powerarmor", "hardboot_generic" },
+				{ "ladder", "ladder" }, { "carpet", "softshoe_generic" }, { "swim", "swim" }, { "powerarmor", "hardboot_generic" },
 				{ "ice", "tile" }, { "glass", "tile" }
 			};
 			auto it = m.find(a_cat);
@@ -169,7 +179,11 @@ namespace
 					}
 					const int num = d < stem.size() ? std::stoi(stem.substr(d)) : 0;
 					const auto gamePath = std::string("Sound\\FX\\BHOP\\") + kFolders[set] + "\\" + e.path().filename().string();
-					found[stem.substr(0, d)][num] = gamePath;
+					std::string group = stem.substr(0, d);
+					if (set == 2 && group == "wade" && num >= 5) {
+						group = "swim";  // HL2's swim sounds are footsteps\wade5-8 (Player.Swim); 1-4 are wading steps
+					}
+					found[group][num] = gamePath;
 				}
 				for (auto& [name, files] : found) {
 					auto& g = g_groups[set][name];
@@ -358,8 +372,8 @@ namespace
 		std::string SurfaceCategory(RE::bhkCharacterController* a_con, float& a_waterDepth)
 		{
 			a_waterDepth = g_cfg.waterSounds ? g_waterDepth.load() : 0.0f;  // game units
-			if (a_waterDepth > 1.0f && a_waterDepth < 200.0f) {
-				return a_waterDepth > 35.0f ? "wade" : "slosh";
+			if (g_cfg.waterSounds && g_waterLevel.load() > 0) {
+				return g_waterLevel.load() >= 2 ? "wade" : "slosh";  // Half-Life: feet in water = slosh, waist = wade
 			}
 			if (g_inPowerArmor.load() && g_cfg.powerArmorHardboot && SetFor("powerarmor") == 2) {
 				return "powerarmor";  // HL2's hard boots (HL1 has none: the floor's own sound)
@@ -425,19 +439,16 @@ namespace
 					}
 					if (set == 1 && g_cfg.hl1FallPain && fall >= g_cfg.fallPainSpeed) {
 						Queue(1, "pl_fallpain", 1, 1.0f);  // pl_fallpain3, as in Half-Life
+					} else if (set == 2 && g_cfg.hl1FallPain && fall >= g_cfg.fallPainSpeed * (526.5f / 580.0f) && HasGroup(2, "pl_fallpain")) {
+						Queue(2, "pl_fallpain", -1, 1.0f);  // Player.FallDamage: HL2's safe fall speed is 526.5 (HL1 580)
 					}
 				}
 			}
 
 			g_step.timer = std::max(0.0f, g_step.timer - a_dt);
 
-			// swimming
+			// swimming: no footsteps (the swim and breathing sounds are UpdateWater's)
 			if (g_swimming.load()) {
-				if (g_cfg.swimSounds && hSpeed > g_cfg.minStepSpeed && g_step.timer <= 0.0f) {
-					const int swimSet = SetFor("swim");
-					Queue(swimSet, GroupFor(swimSet, "swim"), -1, 0.5f);
-					g_step.timer = g_cfg.waterInterval;
-				}
 				return;
 			}
 
@@ -481,6 +492,103 @@ namespace
 			const int  catSet = SetFor(cat);
 			const auto group = GroupFor(catSet, cat);
 			Queue(catSet, group, StepIndex(catSet, group), vol);
+		}
+
+		// ---------------------------------------------------------- swimming and breathing
+		// Half-Life's rules:
+		//  - getting in or out of water: HL1 pl_wade1-4, HL2 Player.Swim (footsteps\wade5-8)
+		//  - holding jump with your waist in water (swimming up, water surfing): the same, once a second
+		//  - HL1 underwater: bubbles (pl_swim1-4), more often the longer you're under (air runs out after 12 s)
+		//  - coming up for air: HL1 pl_wade1 if you were drowning, pl_wade2 after 3 s under; HL2 pl_drown1 if drowning
+		//  - drowning damage: HL1 pain (pl_pain), HL2 pl_drown1 then pl_drown1-3
+		// Drowning follows Fallout's own: it's when you take damage with your head under water.
+		struct WaterState
+		{
+			int   prevLevel{ 0 };
+			float under{ 0.0f };      // seconds with your eyes under water
+			bool  drowned{ false };   // took drowning damage this time under
+			float swimTimer{ 0.0f };
+			float painTimer{ 0.0f };
+			float lastHealth{ -1.0f };
+		} g_water;
+
+
+		// play a sound only if its files are there
+		void PlayIfPresent(int a_set, const char* a_group, int a_index, float a_volume)
+		{
+			if (HasGroup(a_set, a_group)) {
+				Queue(a_set, a_group, a_index, a_volume);
+			}
+		}
+
+		// play a water sound from the chosen game's files, only if they're there (never a footstep instead)
+		void WaterSound(int a_set, const char* a_hl1, const char* a_hl2, int a_index, float a_volume)
+		{
+			std::string g = a_set == 1 ? a_hl1 : a_hl2;
+			if (a_set == 2 && g == "swim" && !HasGroup(2, "swim")) {
+				g = "wade";  // HL2 swim sounds missing: its wading steps are the closest
+			}
+			if (HasGroup(a_set, g)) {
+				Queue(a_set, g, a_index, a_volume);
+			}
+		}
+
+		void UpdateWater(int a_level, bool a_jumpHeld, float a_dt, bool a_menus)
+		{
+			const int set = SetFor("swim");
+			if (set == 0 || !g_ready || a_menus || !g_cfg.swimSounds || a_dt <= 0.0f || a_dt > 0.25f) {
+				g_water.prevLevel = a_level;
+				g_water.lastHealth = g_health.load();
+				return;
+			}
+			auto& w = g_water;
+			const bool hl1 = set == 1;
+			const float hlVol = hl1 ? 1.0f : 0.5f;
+
+			if ((w.prevLevel == 0) != (a_level == 0)) {
+				WaterSound(set, "pl_wade", "swim", -1, hlVol);  // in or out of the water
+			}
+			w.swimTimer = std::max(0.0f, w.swimTimer - a_dt);
+			if (a_level >= 2 && a_jumpHeld && w.swimTimer <= 0.0f) {
+				w.swimTimer = 1.0f;
+				WaterSound(set, "pl_wade", "swim", -1, hlVol);
+			}
+
+			const float health = g_health.load();
+			w.painTimer = std::max(0.0f, w.painTimer - a_dt);
+			if (a_level == 3) {
+				w.under += a_dt;
+				if (w.lastHealth > 0.0f && health > 0.0f && health < w.lastHealth - 0.01f && w.painTimer <= 0.0f) {
+					// drowning damage from Fallout
+					w.painTimer = 0.9f;
+					WaterSound(set, "pl_pain", "pl_drown", hl1 || w.drowned ? -1 : 0, 1.0f);
+					w.drowned = true;
+				}
+				if (hl1) {
+					// bubbles: HL1 checks every frame (here: every 10 ms), 1 in 32, more likely as your air runs out
+					const int   air = std::max(0, static_cast<int>(12.0f - w.under));
+					const float pFrame = (1.0f / 32.0f) * static_cast<float>(std::max(0, 12 - air)) / 12.0f;
+					const float p = 1.0f - std::pow(1.0f - pFrame, a_dt / 0.01f);
+					if (p > 0.0f && static_cast<float>(Random<int>(0, 9999)) < p * 10000.0f) {
+						WaterSound(set, "pl_swim", "pl_swim", -1, 0.8f);
+					}
+				}
+			} else if (w.prevLevel == 3) {
+				// coming up for air
+				if (hl1) {
+					if (w.drowned) {
+						WaterSound(set, "pl_wade", "", 0, 1.0f);  // pl_wade1: gasp
+					} else if (w.under > 3.0f) {
+						WaterSound(set, "pl_wade", "", 1, 1.0f);  // pl_wade2: catching your breath
+					}
+				} else if (w.drowned) {
+					WaterSound(set, "", "pl_drown", 0, 1.0f);  // Player.DrownStart
+				}
+				w.under = 0.0f;
+				w.drowned = false;
+			}
+			w.lastHealth = health;
+			w.prevLevel = a_level;
 		}
 
 		// ---------------------------------------------------------- muting vanilla player footsteps

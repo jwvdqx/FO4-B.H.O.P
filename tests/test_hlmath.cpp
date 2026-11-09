@@ -317,6 +317,78 @@ int main()
 		Near(top, 45.0, 0.6, "jump: the Half-Life way of adding gravity reaches 45 units");
 	}
 
+
+	// --- swimming: water friction, sinking, and the water surf (hold jump at the surface)
+	{
+		using hlcore::Vec3;
+		// 4 friction for 0.1 s: speed * (1 - 0.01*4) per 10 ms step
+		Vec3 v{ 300.0f, 0.0f, 0.0f };
+		for (int i = 0; i < 10; ++i) {
+			v = hlcore::WaterMove(v, {}, 320.0f, 4.0f, 10.0f, 1.0f, 0.01f);
+		}
+		Near(v.x, 300.0 * std::pow(0.96, 10), 0.01, "swim: water friction on your speed");
+		// no input: you sink, at most 60*0.8 = 48 units/s
+		v = {};
+		for (int i = 0; i < 300; ++i) {
+			v = hlcore::WaterMove(v, hlcore::WaterWish(false, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f }, 0.0f, 0.0f, false, 320.0f), 320.0f, 4.0f, 10.0f, 1.0f, 0.01f);
+		}
+		Near(v.z, -48.0, 0.5, "swim: idle you sink slowly (60 * 0.8)");
+		// swim speed is 80% of max speed
+		v = {};
+		for (int i = 0; i < 300; ++i) {
+			v = hlcore::WaterMove(v, hlcore::WaterWish(false, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f }, 320.0f, 0.0f, false, 320.0f), 320.0f, 4.0f, 10.0f, 1.0f, 0.01f);
+		}
+		Near(v.y, 256.0, 0.5, "swim: top speed is 80% of running");
+
+		// the surf: waist in water = swimming (friction), above it = air (no friction, gravity).
+		// Holding jump pushes you up at 100 every time your waist dips in, so you skim and keep speed.
+		auto surf = [](bool a_jump, bool a_hl2, float a_z0 = -10.0f) {
+			Vec3  vel{ 600.0f, 0.0f, 0.0f };
+			float z = a_z0;  // waist height relative to the water surface
+			for (int i = 0; i < 200; ++i) {
+				if (z < 0.0f) {
+					if (a_jump) {
+						vel.z = hlcore::kWaterJumpSpeed;
+					}
+					vel = hlcore::WaterMove(vel, hlcore::WaterWish(a_hl2, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f }, 0.0f, 0.0f, a_jump, 320.0f), 320.0f, 4.0f, 10.0f, 1.0f, 0.01f);
+				} else {
+					vel.z -= (a_hl2 ? 600.0f : 800.0f) * 0.01f;
+				}
+				z += vel.z * 0.01f;
+			}
+			return std::hypot(vel.x, vel.y);
+		};
+		Check(surf(true, false) > 250.0, "surf: HL1 holding jump keeps your speed across water", surf(true, false), 250.0);
+		Check(surf(false, false) < 5.0, "surf: without jump the water stops you", surf(false, false), 0.0);
+		Check(surf(true, true) > 250.0, "surf: HL2 holding jump keeps your speed too", surf(true, true), 250.0);
+
+		// the plugin's surf (Fallout keeps you at the surface, so no real bob): same speed as the bobbing above
+		hlcore::Params p;
+		p.tick = 0.01f;
+		p.friction = 4.0f;
+		hlcore::State st;
+		st.vel = { 600.0f, 0.0f };
+		hlcore::StepInput in;
+		in.ground = false;
+		in.water = 2;
+		in.surfInWater = hlcore::SurfInWater(0.01f, 800.0f);
+		for (int i = 0; i < 200; ++i) {
+			hlcore::Step(st, in, p, 0.01f);
+		}
+		const double bob = surf(true, false, -0.5f);  // starting at the surface, like the plugin
+		Near(st.vel.Length(), bob, 0.05 * bob, "surf: the plugin's surf matches HL1's bobbing (within 5%)");
+		// swimming (flat) reaches 80% of max speed
+		hlcore::State sw;
+		in.water = 1;
+		in.wishDir = { 1.0f, 0.0f };
+		in.wishSpeed = 320.0f;
+		in.waterMax = 320.0f;
+		for (int i = 0; i < 300; ++i) {
+			hlcore::Step(sw, in, p, 0.01f);
+		}
+		Near(sw.vel.x, 256.0, 0.5, "swim: the plugin's swimming tops out at 80%");
+	}
+
 	std::printf("\n%d failure(s)\n", g_failures);
 	return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -164,9 +164,9 @@ namespace
 			return;
 		}
 		g_stats.lastPrint = now;
-		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} | load {:.2f} PA {} swim {} sneak {} 1st {} | run speed data {:.0f} seen {:.0f} | slowest step sound {:.2f} ms | measure check {:.3f}",
+		REX::INFO("[1s] calls {} ground {} clips {} pushes {} | state {} | wish {:.0f} out {:.0f} actual {:.0f} (havok says {:.0f}{}) (HL u/s) | material {:08X} | water {:.0f} level {} | load {:.2f} PA {} swim {} sneak {} 1st {} | run speed data {:.0f} seen {:.0f} | slowest step sound {:.2f} ms | measure check {:.3f}",
 			g_stats.calls, g_stats.groundCalls, g_stats.clips, g_stats.pushes, g_stats.state, g_stats.wishSpeed, g_stats.outSpeed, g_stats.actualSpeed, g_stats.reportedSpeed, g_stats.measured ? "" : ", not measured",
-			g_stats.material, g_stats.water, g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load(),
+			g_stats.material, g_stats.water, g_waterLevel.load(), g_load.load(), g_inPowerArmor.load(), g_swimming.load(), g_sneaking.load(), g_firstPerson.load(),
 			g_dataSpeed[g_inPowerArmor.load() ? 1 : 0][1].load(), g_input.learned[g_inPowerArmor.load() ? 1 : 0][1], Sounds::g_loadMaxMs.exchange(0.0f), g_stats.measScale);
 		g_stats.calls = 0;
 		g_stats.groundCalls = 0;
@@ -344,6 +344,13 @@ namespace
 	}
 
 	std::atomic<long long> g_autoJumpUntil{ 0 };  // auto-jump: re-jump if jump is held until this time (ms)
+	std::atomic<long long> g_jumpHeldMs{ 0 };     // last time the jump key was seen held (ms), 0 = released
+
+	bool JumpHeld()
+	{
+		const long long t = g_jumpHeldMs.load();
+		return t != 0 && NowMs() - t < 250;
+	}
 
 	// Auto-jump: the game only jumps when the jump key is freshly pressed. While you hold it, the jump
 	// handler keeps getting "held" events; right after a landing we hand it one as a fresh press.
@@ -355,6 +362,9 @@ namespace
 
 		void Hooked(void* a_this, const RE::ButtonEvent* a_event)
 		{
+			if (a_event) {
+				g_jumpHeldMs = a_event->QPressed() ? NowMs() : 0;  // swimming up / water surfing need to know you hold jump
+			}
 			if (a_event && a_event->QPressed() && a_event->QHeldDownSecs() > 0.0f && NowMs() < g_autoJumpUntil.load()) {
 				g_autoJumpUntil = 0;
 				alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];

@@ -84,7 +84,28 @@ namespace
 		}
 		const bool onGround = rawGround || (!g_air.jumpedThisAir && g_air.airTime < 0.12f);
 
-		const float waterDepth = g_waterDepth.load();  // game units, from the game's own water check (main thread)
+		// water: how deep you stand (game units) and Half-Life's water level (1 feet, 2 waist, 3 eyes under),
+		// from the game's own water surface and your live position
+		float waterDepth = 0.0f;
+		int   waterLevel = 0;
+		if (auto player = RE::PlayerCharacter::GetSingleton()) {
+			const float surfZ = g_waterSurfaceZ.load();
+			if (surfZ > -1.0e29f) {
+				const float d = surfZ - player->data.location.z;
+				waterDepth = std::isfinite(d) && d > 0.0f && d < 10000.0f ? d : 0.0f;
+			}
+			float body = a_this->actorHeight * 69.99125f;  // your height in game units (Havok metres -> game units)
+			if (!std::isfinite(body) || body < 40.0f || body > 400.0f) {
+				body = 128.0f;
+			}
+			// Half-Life: waist = the middle of the body, eyes = 64 of 72 units up
+			waterLevel = waterDepth <= 1.0f ? 0 : waterDepth < 0.5f * body ? 1 : waterDepth < 0.89f * body ? 2 : 3;
+			if (g_swimming.load() && waterLevel < 2) {
+				waterLevel = 2;  // Fallout says you're swimming: at least waist deep
+			}
+		}
+		g_waterDepth = waterDepth;
+		g_waterLevel = waterLevel;
 
 		g_stats.calls++;
 		g_stats.state = state;
@@ -173,6 +194,7 @@ namespace
 			g_air.boostMode = 0;
 		}
 		Sounds::Update(a_this, dt, onGround, actual, menus, jumpedNow, landEvent, fallSpeed);
+		Sounds::UpdateWater(waterLevel, JumpHeld(), dt, menus);
 		if (onGround) {
 			g_air.maxFall = 0.0f;
 		}
@@ -182,6 +204,15 @@ namespace
 
 		const Wish wish = ReadWish(a_vel, dt);
 		g_stats.wishSpeed = wish.speed;
+		{
+			// HL2: the suit's sprint sound when you start sprinting
+			static bool wasSprinting = false;
+			const bool  sprinting = wish.cls == MoveClass::kSprint;
+			if (sprinting && !wasSprinting && !menus && g_cfg.sprintSound && SoundSet() == 2) {
+				Sounds::PlayIfPresent(2, "suit_sprint", 0, 0.7f);
+			}
+			wasSprinting = sprinting;
+		}
 
 		const bool jumped = jumpedNow;
 		const bool landed = !g_air.prevGround && onGround && g_air.jumpedThisAir;  // landing from a real jump
@@ -218,12 +249,14 @@ namespace
 			}
 		}
 
-		const bool skip = externalMove || g_cfg.mode == Mode::kVanilla || menus || g_swimming.load() ||
+		// Half-Life swimming: flat swimming and water surfing; Fallout keeps your up and down (floating, diving)
+		const bool swimHL = g_swimming.load() && g_cfg.swimMode == 1;
+		const bool skip = externalMove || g_cfg.mode == Mode::kVanilla || menus || (g_swimming.load() && !swimHL) ||
 		                  (g_inPowerArmor.load() && !g_cfg.enableInPowerArmor) || dt <= 0.0f || dt > 0.25f;
 
 		// vertical: optional Half-Life jumping and gravity (we're in charge while you're in the air)
 		float hlVz = a_vel.z;
-		if (!skip && g_cfg.jumpPhysics != 0) {
+		if (!skip && g_cfg.jumpPhysics != 0 && !swimHL) {
 			hlVz = HLVertical(a_vel.z, rawGround, onGround, jumpedNow, dt);
 		} else {
 			g_air.vzOn = false;
@@ -231,7 +264,7 @@ namespace
 
 		const bool airLocked = Perks::Unlock() && g_agility.load() < 5.0f;  // unlock mode: Agility 5 for air control
 		const bool airSim = !onGround && g_cfg.airControl && !airLocked;
-		if (skip || (!onGround && !airSim)) {
+		if (skip || (!onGround && !airSim && !swimHL)) {
 			g_air.hasLastOut = false;
 			ResetSim(a_vel);
 			g_air.airborneSim = false;
@@ -376,7 +409,26 @@ namespace
 		in.stickX = wish.inX;
 		in.yawRate = g_input.yawRate;
 
-		if (!onGround) {
+		bool surfing = false;
+		if (swimHL) {
+			// ---- swimming. Hold jump at the surface while faster than you can swim: water surfing (Half-Life
+			// pushes you up at 100 u/s each time your waist dips in, so you skim along keeping your speed).
+			g_air.airborneSim = false;
+			const float maxSpeed = std::max(ClassSpeed(MoveClass::kRun, false), 1.0f);
+			const float swimSpeed = 0.8f * maxSpeed;
+			surfing = g_cfg.waterSurf && JumpHeld() && waterLevel == 2 && SimVel().Length() > swimSpeed;
+			const float g = g_cfg.mode == Mode::kHL1 ? 800.0f : 600.0f;  // sv_gravity
+			in.water = surfing ? 2 : 1;
+			in.waterMax = maxSpeed;
+			in.surfInWater = hlcore::SurfInWater(g_active.tick, g);
+			in.airAccelMult = 1.0f;
+			in.airSurface = 1.0f;
+			static bool loggedSwim = false;
+			if (g_cfg.debugLog && !loggedSwim && JumpHeld()) {
+				loggedSwim = true;
+				REX::INFO("swimming: jump key seen while swimming (water surfing can work)");
+			}
+		} else if (!onGround) {
 			// ---- in the air: Half-Life air control, momentum kept
 			if (!g_air.airborneSim) {
 				g_air.airborneSim = true;  // just left the ground: carry our ground velocity into the air
@@ -465,7 +517,7 @@ namespace
 		RE::hkVector4f out = a_vel;
 		out.x = outX * g_cfg.unitScale;
 		out.y = outY * g_cfg.unitScale;
-		out.z = g_air.vzOn ? hlVz : CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
+		out.z = swimHL ? a_vel.z : g_air.vzOn ? hlVz : CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
 		g_air.sentVz = out.z;
 		{
 			const float sp = std::hypot(outX, outY);
