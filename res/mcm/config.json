@@ -301,6 +301,15 @@
           }
         },
         {
+          "id": "bUseVanillaReverb:Sounds",
+          "text": "Use footstep reverb",
+          "type": "switcher",
+          "help": "Half-Life sounds get the same reverb and distance as vanilla footsteps (including reverb mods). Turn off if sounds misbehave.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "text": "Volume",
           "type": "section"
         },

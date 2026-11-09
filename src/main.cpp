@@ -68,6 +68,7 @@ namespace
 		bool  swimSounds{ false };
 		bool  powerArmorHardboot{ true };
 		bool  hl1FallPain{ true };
+		bool  useVanillaOutput{ true };  // reuse the vanilla footstep output model (reverb, distance)
 		float volume{ 1.0f };
 		float runVolume{ 0.5f };
 		float walkVolume{ 0.2f };
@@ -183,6 +184,7 @@ namespace
 					B("bSwimSounds", g_cfg.swimSounds);
 					B("bPowerArmorHardboot", g_cfg.powerArmorHardboot);
 					B("bHL1FallPainSound", g_cfg.hl1FallPain);
+					B("bUseVanillaReverb", g_cfg.useVanillaOutput);
 					F("fVolume", g_cfg.volume);
 					F("fRunVolume", g_cfg.runVolume);
 					F("fWalkVolume", g_cfg.walkVolume);
@@ -330,6 +332,53 @@ namespace
 			return nullptr;
 		}
 		return reinterpret_cast<const char*>(td + 16);
+	}
+
+	// Offset of the part of an object that this pointer points at (from the RTTI), or -1.
+	std::int32_t SubobjectOffset(const void* a_obj)
+	{
+		const auto& g = Game();
+		if (!g.base || !Readable(a_obj, 8)) {
+			return -1;
+		}
+		const auto vtbl = *reinterpret_cast<const std::uintptr_t*>(a_obj);
+		if (!g.Contains(vtbl - 8, 8)) {
+			return -1;
+		}
+		const auto col = *reinterpret_cast<const std::uintptr_t*>(vtbl - 8);
+		if (!g.Contains(col, 24) || *reinterpret_cast<const std::uint32_t*>(col) != 1) {
+			return -1;
+		}
+		return static_cast<std::int32_t>(reinterpret_cast<const std::uint32_t*>(col)[1]);
+	}
+
+	std::uint32_t ClassDescRva(const void* a_obj)
+	{
+		const auto vtbl = *reinterpret_cast<const std::uintptr_t*>(a_obj);
+		const auto col = *reinterpret_cast<const std::uintptr_t*>(vtbl - 8);
+		return reinterpret_cast<const std::uint32_t*>(col)[4];
+	}
+
+	std::int32_t BaseOffset(std::uint32_t a_classDescRva, std::string_view a_baseSubstr);
+
+	// Turns a BGSSoundOutput pointer (any part of it) into its verified BSISoundOutputModel part.
+	const RE::BSISoundOutputModel* SoundOutputInterface(const void* a_ptr)
+	{
+		const auto cur = SubobjectOffset(a_ptr);
+		if (cur < 0) {
+			return nullptr;
+		}
+		const auto complete = reinterpret_cast<std::uintptr_t>(a_ptr) - static_cast<std::uintptr_t>(cur);
+		const auto ifaceOff = BaseOffset(ClassDescRva(a_ptr), "BSISoundOutputModel");
+		if (ifaceOff < 0) {
+			return nullptr;
+		}
+		const auto iface = reinterpret_cast<const void*>(complete + static_cast<std::uintptr_t>(ifaceOff));
+		const char* n = RttiName(iface);
+		if (SubobjectOffset(iface) != ifaceOff || !n || std::string_view(n).find("BGSSoundOutput") == std::string_view::npos) {
+			return nullptr;
+		}
+		return static_cast<const RE::BSISoundOutputModel*>(iface);
 	}
 
 	struct FoundVtable
@@ -647,9 +696,17 @@ namespace
 								const auto p = reinterpret_cast<const void*>(impl[i]);
 								const char* n = RttiName(p);
 								if (n && std::string_view(n).find("BGSSoundOutput") != std::string_view::npos) {
-									g_outputModel = static_cast<const RE::BSISoundOutputModel*>(p);
-									REX::INFO("Using vanilla footstep output model {:X} (from sound {:08X})",
-										reinterpret_cast<std::uintptr_t>(p), snd->GetFormID());
+									// The sound stores the form (BGSSoundOutput*). The audio engine needs the
+									// BSISoundOutputModel part of it, which sits further inside the object.
+									auto iface = SoundOutputInterface(p);
+									if (!iface) {
+										REX::WARN("Output model {:X} found but its interface could not be verified; not using it",
+											reinterpret_cast<std::uintptr_t>(p));
+										return;
+									}
+									g_outputModel = iface;
+									auto form = reinterpret_cast<const RE::TESForm*>(reinterpret_cast<std::uintptr_t>(p) - SubobjectOffset(p));
+									REX::INFO("Using vanilla footstep output model {:08X} (from sound {:08X})", form->GetFormID(), snd->GetFormID());
 									return;
 								}
 							}
@@ -705,7 +762,7 @@ namespace
 				}
 				return;
 			}
-			if (g_outputModel) {
+			if (g_outputModel && g_cfg.useVanillaOutput) {
 				handle.SetOutputModel(g_outputModel);
 			}
 			const RE::NiPoint3 pos(player->data.location.x, player->data.location.y, player->data.location.z);
