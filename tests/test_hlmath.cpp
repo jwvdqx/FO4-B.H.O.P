@@ -145,6 +145,16 @@ int main()
 		Near(DecayPunch(0.5f, 1.0f), 0.0, 1e-6, "punch decays to zero");
 	}
 
+	// --- crouch-jump lift
+	{
+		// from the top of the jump, +18 HL units (0.4572 m) at Fallout gravity 13.24: sqrt(2*13.24*0.4572)
+		Near(CrouchLiftSpeed(0.0f, 13.24f, 0.4572f), 3.4795, 1e-3, "crouch lift from the peak");
+		// already rising at 2 m/s: the lift is added on top of what you'd climb anyway
+		const float v = CrouchLiftSpeed(2.0f, 13.24f, 0.4572f);
+		Near((v * v - 4.0f) / (2.0f * 13.24f), 0.4572, 1e-4, "crouch lift adds exactly the lift height");
+		Near(CrouchLiftSpeed(-1.0f, 13.24f, 0.4572f), 3.4795, 1e-3, "falling slightly: lift from here");
+	}
+
 	std::printf("\n%d failure(s)\n", g_failures);
 	return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

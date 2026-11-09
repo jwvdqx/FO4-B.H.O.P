@@ -1,4 +1,4 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.1.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.2.0)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
@@ -27,6 +27,13 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 - Bunnyhop: jump again within 0.05 s of landing (original games: one frame) and friction doesn't slow you.
   Action Boy/Girl widens the window; at max rank, hold jump to bunnyhop automatically (auto-jump can also be
   set to always or off). HL1's bunnyhop cap and HL2's jump boost (with its ABH quirk) are included.
+
+- Crouch-jump: press sneak in the air (while rising or just after the top) to lift your feet like Half-Life's
+  duck-jump: HL1 +18 units, HL2 +36 units, or scaled to Fallout's own jump. You land sneaking, like HL keeps
+  you ducked. Fallout can't shrink your body mid-air, so this is an upward boost giving the same extra height;
+  normal physics still stops you at ceilings.
+- Edge friction (optional, off by default): Half-Life 1 doubles friction when there's no floor just ahead,
+  so you stop at ledges. Checked with three short rays across your width, like HL1's box check.
 
 ## Camera (first person)
 
@@ -81,9 +88,8 @@ chain with other plugins that changed the same functions. Problems are written t
 
 - Collision and push detection compare what the game did with what the mod asked for; there's no direct wall
   normal from the engine, so very noisy geometry may need tuning (`fPushThreshold`).
-- HL1's edge friction (extra friction at ledges) isn't included.
 - Perks are found by name (English by default; change the names in the settings file for other languages).
-- No speedometer or crouch-jump yet.
+- No speedometer yet.
 
 ## Math tests
 

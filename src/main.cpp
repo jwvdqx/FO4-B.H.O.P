@@ -83,6 +83,12 @@ namespace
 		float bhopGrace{ 0.05f };      // seconds after landing without friction (original games: one frame)
 		int   autoJump{ 1 };           // 0 off, 1 with Action Boy/Girl at max rank, 2 always
 		bool  pushes{ true };          // hits/explosions add to your momentum (Half-Life style)
+		bool  crouchJump{ true };      // crouch (sneak key) in the air lifts your feet like Half-Life's duck-jump
+		int   crouchJumpHeight{ 0 };   // 0 = exact per game (HL1 18, HL2 36 units), 1 = scaled to Fallout's jump
+		float crouchJumpWindow{ 0.15f };  // seconds after the top of the jump it still works
+		bool  crouchLandSneak{ true };  // land sneaking after a crouch-jump (Half-Life keeps you ducked)
+		int   edgeFriction{ 0 };       // 0 off, 1 HL1 mode only, 2 both modes
+		float edgeFrictionMult{ 2.0f };  // sv_edgefriction
 		float pushThreshold{ 60.0f };  // HL units/s of sudden extra speed that counts as a push
 		bool  hl1BhopCap{ true };
 		bool  hl2JumpBoost{ true };
@@ -235,6 +241,15 @@ namespace
 						g_cfg.autoJump = std::clamp(std::stoi(val), 0, 2);
 					}
 					B("bPushes", g_cfg.pushes);
+					B("bCrouchJump", g_cfg.crouchJump);
+					B("bCrouchLandSneak", g_cfg.crouchLandSneak);
+					F("fCrouchJumpWindow", g_cfg.crouchJumpWindow);
+					F("fEdgeFrictionMult", g_cfg.edgeFrictionMult);
+					if (key == "iCrouchJumpHeight") {
+						g_cfg.crouchJumpHeight = std::clamp(std::stoi(val), 0, 1);
+					} else if (key == "iEdgeFriction") {
+						g_cfg.edgeFriction = std::clamp(std::stoi(val), 0, 2);
+					}
 					F("fPushThreshold", g_cfg.pushThreshold);
 					B("bHL1BhopCap", g_cfg.hl1BhopCap);
 					B("bHL2JumpBoost", g_cfg.hl2JumpBoost);
@@ -325,6 +340,8 @@ namespace
 		F(c.strafeAssist, 0.0f, 1.0f, 0.5f);
 		F(c.bhopGrace, 0.0f, 0.5f, 0.05f);
 		F(c.pushThreshold, 10.0f, 1000.0f, 60.0f);
+		F(c.crouchJumpWindow, 0.0f, 1.0f, 0.15f);
+		F(c.edgeFrictionMult, 1.0f, 10.0f, 2.0f);
 		F(c.surfaceStrength, 0.0f, 1.0f, 1.0f);
 		F(c.bobScale, 0.0f, 5.0f, 1.0f);
 		F(c.rollAngle, -15.0f, 15.0f, 2.0f);
@@ -732,6 +749,47 @@ namespace
 		bool Unlock() { return g_cfg.perkMode == 2; }
 	}
 
+	// HL1 edge friction (PM_Friction): is there floor 16 units ahead, within 34 units down?
+	std::atomic_bool  g_edgeAhead{ false };      // true = no floor ahead (friction is multiplied)
+	std::atomic<float> g_moveDirX{ 0.0f }, g_moveDirY{ 0.0f };  // current horizontal move direction (from physics)
+	int               g_edgeLogs{ 0 };
+
+	void ProbeEdge(RE::PlayerCharacter* a_player)
+	{
+		const bool wanted = g_cfg.edgeFriction == 2 || (g_cfg.edgeFriction == 1 && g_cfg.mode == Mode::kHL1);
+		if (!wanted) {
+			g_edgeAhead = false;
+			return;
+		}
+		auto cell = a_player->GetParentCell();
+		const float dx = g_moveDirX.load(), dy = g_moveDirY.load();
+		if (!cell || (std::fabs(dx) < 0.01f && std::fabs(dy) < 0.01f)) {
+			g_edgeAhead = false;
+			return;
+		}
+		constexpr float kHL = 1.0f / (0.0254f * 69.99124f);  // HL unit in game units
+		const float ahead = 16.0f * kHL, down = 34.0f * kHL, half = 16.0f * kHL;  // HL1 hull: 32 wide
+		const auto& pos = a_player->data.location;
+		// three rays across the player's width (HL1 sweeps a box)
+		int hits = 0;
+		for (int i = -1; i <= 1; ++i) {
+			const float side = static_cast<float>(i) * half * 0.9f;
+			const RE::NiPoint3 start(pos.x + dx * ahead + dy * side, pos.y + dy * ahead - dx * side, pos.z + 2.0f);
+			const RE::NiPoint3 end(start.x, start.y, start.z - down - 2.0f);
+			RE::bhkPickData pick;
+			pick.SetStartEnd(start, end);
+			cell->Pick(pick);
+			if (pick.HasHit()) {
+				++hits;
+			}
+			if (g_cfg.debugLog && g_edgeLogs < 6) {
+				++g_edgeLogs;
+				REX::INFO("edge probe {}: hit {} fraction {:.3f}", i, pick.HasHit(), pick.HasHit() ? pick.GetHitFraction() : 1.0f);
+			}
+		}
+		g_edgeAhead = hits == 0;
+	}
+
 	void UpdateCache()
 	{
 		g_cacheQueued = false;
@@ -757,6 +815,7 @@ namespace
 			                           cur == cam->cameraStates[RE::CameraStates::kIronSights].get());
 		}
 		Perks::Update(player);
+		ProbeEdge(player);
 
 		float load = 0.0f;
 		if (auto avs = RE::ActorValue::GetSingleton(); avs && avs->carryWeight) {
@@ -1933,6 +1992,49 @@ namespace
 		}
 	}
 
+	std::atomic<long long> g_crouchPressedMs{ 0 };  // when the sneak key was last pressed (ms)
+	std::atomic_bool       g_landSneak{ false };     // land sneaking after a crouch-jump
+	std::atomic_bool       g_crouchWasSneaking{ false };
+
+	namespace CrouchKey
+	{
+		using OnButton_t = void (*)(void*, const RE::ButtonEvent*);
+		OnButton_t g_orig{ nullptr };
+
+		void Hooked(void* a_this, const RE::ButtonEvent* a_event)
+		{
+			if (a_event && a_event->QJustPressed()) {
+				auto p = RE::PlayerCharacter::GetSingleton();
+				g_crouchWasSneaking = p && p->IsSneaking();  // before Fallout toggles it
+				g_crouchPressedMs = NowMs();                 // the movement code decides if it's a crouch-jump
+			}
+			g_orig(a_this, a_event);  // Fallout still gets the key as normal
+		}
+
+		void Install()
+		{
+			static bool done = false;
+			auto        controls = RE::PlayerControls::GetSingleton();
+			if (done || !controls || !controls->sneakHandler) {
+				return;
+			}
+			done = true;
+			const void* handler = controls->sneakHandler;
+			const char* name = RttiName(handler);
+			if (!name || std::string_view(name).find("SneakHandler") == std::string_view::npos) {
+				REX::ERROR("Sneak handler has an unexpected type ({}); crouch-jump NOT installed", name ? name : "unknown");
+				return;
+			}
+			auto vtbl = *reinterpret_cast<std::uintptr_t* const*>(handler);
+			if (!Game().Contains(vtbl[8])) {
+				REX::WARN("Sneak key handling already changed by another plugin; chaining after it");
+			}
+			g_orig = reinterpret_cast<OnButton_t>(vtbl[8]);
+			REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(vtbl + 8), reinterpret_cast<std::uintptr_t>(&Hooked));
+			REX::INFO("Crouch-jump ready ({})", name);
+		}
+	}
+
 	struct AirState
 	{
 		bool  prevGround{ true };
@@ -1943,10 +2045,91 @@ namespace
 		hlmath::Vec2 lastOut{};  // what we told the game last step
 		float jumpStartZ{ 0.0f }, jumpPeakZ{ 0.0f }, jumpTakeoffVz{ 0.0f }, jumpTime{ 0.0f };
 		bool  measuring{ false };
+		// crouch-jump
+		bool  crouchJumped{ false };   // already used this jump
+		float boostVz{ 0.0f };         // extra upward speed (m/s) we add
+		int   boostMode{ 0 };          // 0 = not known yet, 1 = Fallout keeps our speed, 2 = we keep adding it
+		float lastOutVz{ 0.0f };
+		float lastInVz{ 0.0f };
+		float gravity{ 13.24f };       // measured in the air (m/s^2); Fallout default 9.81 * 1.35
+		float prevVz{ 0.0f };
+		bool  hasPrevVz{ false };
+		float jumpHeightHL{ 43.0f };   // Fallout's own jump height (HL units), learned from jumps
 		bool  hasLastOut{ false };
 		float grace{ 0.0f };
 		bool  airborneSim{ false };  // our horizontal velocity is in charge while airborne
 	} g_air;
+
+	// Crouch-jump: Fallout can't shrink your body mid-air, so we give the upward speed that adds exactly
+	// the height Half-Life's duck-jump gives. Physics still handles ceilings.
+	// Returns the vertical speed (m/s) to hand to the game.
+	float CrouchJumpVertical(float a_inVz, float a_actualVz, bool a_rawGround, float a_dt)
+	{
+		// measure gravity in the air from the game's own vertical speed
+		if (!a_rawGround && g_air.hasPrevVz && a_dt > 0.001f && g_air.boostVz == 0.0f) {
+			const float g = (g_air.prevVz - a_inVz) / a_dt;
+			if (g > 3.0f && g < 40.0f) {
+				g_air.gravity += (g - g_air.gravity) * 0.1f;
+			}
+		}
+		g_air.prevVz = a_inVz;
+		g_air.hasPrevVz = !a_rawGround;
+
+		float outVz = a_inVz;
+		if (a_rawGround || g_cfg.mode == Mode::kVanilla || !g_cfg.crouchJump) {
+			return outVz;
+		}
+
+		// keep an active boost going, in whichever way the game needs
+		if (g_air.boostVz > 0.0f) {
+			if (g_air.boostMode == 0) {
+				// first step after the boost: did Fallout carry on from our speed, or from its own?
+				const float fromOurs = std::fabs(a_inVz - (g_air.lastOutVz - g_air.gravity * a_dt));
+				const float fromItsOwn = std::fabs(a_inVz - (g_air.lastInVz - g_air.gravity * a_dt));
+				g_air.boostMode = fromOurs <= fromItsOwn ? 1 : 2;
+				if (g_cfg.debugLog) {
+					REX::INFO("crouch-jump: Fallout {} our vertical speed", g_air.boostMode == 1 ? "keeps" : "ignores");
+				}
+			}
+			if (g_air.boostMode == 2) {
+				if (a_actualVz < g_air.lastOutVz - g_air.gravity * a_dt - 1.0f) {
+					g_air.boostVz = 0.0f;  // hit a ceiling: stop pushing up
+				} else {
+					outVz = a_inVz + g_air.boostVz;
+				}
+			} else {
+				g_air.boostVz = 0.0f;  // Fallout already carries it
+			}
+		}
+
+		// a fresh crouch press in the air?
+		const bool pressed = NowMs() - g_crouchPressedMs.load() < 120;
+		if (pressed && !g_air.crouchJumped && !g_crouchWasSneaking.load() && g_air.airTime > 0.05f) {
+			const float vz = a_actualVz;  // m/s, + is up
+			const float window = g_air.gravity * g_cfg.crouchJumpWindow;  // speed lost in the window after the peak
+			if (vz > -window) {
+				const bool  hl1 = g_cfg.mode == Mode::kHL1;
+				float       liftHL = hl1 ? 18.0f : 36.0f;  // HL1: hull centre, HL2: feet move up the full difference
+				if (g_cfg.crouchJumpHeight == 1) {
+					liftHL *= g_air.jumpHeightHL / (hl1 ? 45.0f : 21.3f);  // same share of Fallout's own jump
+				}
+				const float lift = liftHL * g_cfg.unitScale;  // metres
+				const float newVz = hlmath::CrouchLiftSpeed(vz, g_air.gravity, lift);
+				g_air.crouchJumped = true;
+				g_landSneak = true;
+				g_crouchPressedMs = 0;
+				g_air.boostVz = newVz - a_inVz;
+				g_air.boostMode = 0;
+				outVz = newVz;
+				if (g_cfg.debugLog) {
+					REX::INFO("crouch-jump: +{:.0f} HL units, vertical {:.2f} -> {:.2f} m/s (gravity {:.2f})", liftHL, vz, newVz, g_air.gravity);
+				}
+			}
+		}
+		g_air.lastOutVz = outVz;
+		g_air.lastInVz = a_inVz;
+		return outVz;
+	}
 
 	void HookedSetLinearVelocity(RE::bhkCharacterController* a_this, const RE::hkVector4f& a_vel)
 	{
@@ -2013,10 +2196,10 @@ namespace
 				g_stats.firstCalls, dt, wallDt, state, a_vel.x, a_vel.y, a_vel.z, actual.x, actual.y, actual.z, a_this->flags);
 		}
 
-		// measurements for calibrating crouch-jump / gravity (debug log only)
-		if (g_cfg.debugLog) {
+		// measurements: Fallout's jump height (used by the scaled crouch-jump) + debug info
+		{
 			static bool logged = false;
-			if (!logged) {
+			if (g_cfg.debugLog && !logged) {
 				logged = true;
 				REX::INFO("physics: gravity {:.3f} height {:.3f} radius {:.3f} scale {:.3f} actorHeight {:.3f} shapeType {}",
 					a_this->gravity, a_this->height, a_this->radius, a_this->scale, a_this->actorHeight,
@@ -2037,8 +2220,15 @@ namespace
 			if (g_air.measuring && rawGround) {
 				g_air.measuring = false;
 				const float rise = g_air.jumpPeakZ - g_air.jumpStartZ;  // game units
-				REX::INFO("jump: takeoff {:.2f} m/s ({:.0f} HL u/s), peak +{:.1f} game units ({:.1f} HL units), air time {:.2f} s",
-					g_air.jumpTakeoffVz, g_air.jumpTakeoffVz / g_cfg.unitScale, rise, rise * (0.0254f * 69.99124f), g_air.jumpTime);
+				if (!g_air.crouchJumped && rise > 10.0f && rise < 200.0f) {
+					const float hl = rise * (0.0254f * 69.99124f);
+					g_air.jumpHeightHL += (hl - g_air.jumpHeightHL) * 0.3f;
+				}
+				if (g_cfg.debugLog) {
+					REX::INFO("jump: takeoff {:.2f} m/s ({:.0f} HL u/s), peak +{:.1f} game units ({:.1f} HL units), air time {:.2f} s, gravity {:.2f} m/s2{}",
+						g_air.jumpTakeoffVz, g_air.jumpTakeoffVz / g_cfg.unitScale, rise, rise * (0.0254f * 69.99124f), g_air.jumpTime,
+						g_air.gravity, g_air.crouchJumped ? " (crouch-jump)" : "");
+				}
 			}
 		}
 
@@ -2050,6 +2240,20 @@ namespace
 		const float fallSpeed = g_air.maxFall;
 		if (landEvent && !menus) {
 			Camera::OnLand(fallSpeed);
+			if (g_landSneak.exchange(false) && g_cfg.crouchLandSneak) {
+				if (auto task = F4SE::GetTaskInterface()) {
+					task->AddTask([]() {
+						if (auto p = RE::PlayerCharacter::GetSingleton(); p && !p->IsSneaking()) {
+							p->SetSneaking(true);  // Half-Life keeps you ducked after a duck-jump
+						}
+					});
+				}
+			}
+		}
+		if (rawGround) {
+			g_air.crouchJumped = false;
+			g_air.boostVz = 0.0f;
+			g_air.boostMode = 0;
 		}
 		Sounds::Update(a_this, dt, onGround, actual, menus, jumpedNow, landEvent, fallSpeed);
 		if (onGround) {
@@ -2205,7 +2409,8 @@ namespace
 				if (g_air.grace > 0.0f) {
 					g_air.grace -= a_t;
 				} else {
-					Friction(a_t, frictionMult * surface);
+					const bool edge = g_edgeAhead.load() && (g_cfg.edgeFriction == 2 || (g_cfg.edgeFriction == 1 && g_cfg.mode == Mode::kHL1));
+					Friction(a_t, frictionMult * surface * (edge ? g_cfg.edgeFrictionMult : 1.0f));
 				}
 				Accelerate(wish.dirX, wish.dirY, wish.speed, a_t, accelMult * surface);
 			});
@@ -2217,6 +2422,12 @@ namespace
 		RE::hkVector4f out = a_vel;
 		out.x = outX * g_cfg.unitScale;
 		out.y = outY * g_cfg.unitScale;
+		out.z = CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
+		{
+			const float sp = std::hypot(outX, outY);
+			g_moveDirX = sp > 1.0f ? outX / sp : 0.0f;
+			g_moveDirY = sp > 1.0f ? outY / sp : 0.0f;
+		}
 		g_stats.outSpeed = std::hypot(outX, outY);
 		PrintStats();
 		g_origSetVel(a_this, out);
@@ -2283,6 +2494,9 @@ namespace
 		g_air = AirState{};
 		g_input = InputState{};
 		g_autoJumpUntil = 0;
+		g_crouchPressedMs = 0;
+		g_landSneak = false;
+		g_edgeAhead = false;
 		g_stats = Stats{};
 		Camera::Reset();
 		Sounds::OnGameLoaded();
@@ -2332,6 +2546,7 @@ namespace
 				task->AddTask([]() {
 					Camera::Install();
 					AutoJump::Install();
+					CrouchKey::Install();
 				});
 			}
 			break;

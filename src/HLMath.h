@@ -152,6 +152,14 @@ namespace hlmath
 		return a_fallSpeed >= threshold ? a_fallSpeed * 0.013f : 0.0f;
 	}
 
+	// Crouch-jump lift: the upward speed (m/s) that adds a_lift metres of height from the current point,
+	// keeping any upward speed you already have.
+	inline float CrouchLiftSpeed(float a_upSpeed, float a_gravity, float a_lift)
+	{
+		const float up = std::max(a_upSpeed, 0.0f);
+		return std::sqrt(up * up + 2.0f * a_gravity * a_lift);
+	}
+
 	// PM_DropPunchAngle (HL1 decay, also used for HL2 here)
 	inline float DecayPunch(float a_punch, float a_dt)
 	{

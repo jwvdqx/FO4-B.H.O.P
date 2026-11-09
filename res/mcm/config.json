@@ -220,6 +220,36 @@
           }
         },
         {
+          "text": "Ledge edges",
+          "type": "section"
+        },
+        {
+          "id": "iEdgeFriction:Ground",
+          "text": "Edge friction",
+          "type": "dropdown",
+          "help": "Half-Life 1: friction doubles when there's no floor just ahead, so you stop at ledges instead of sliding off. HL2 removed it.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "Half-Life 1 mode only",
+              "Both modes"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "fEdgeFrictionMult:Ground",
+          "text": "Edge friction strength",
+          "type": "slider",
+          "help": "Friction multiplier at ledges. Half-Life 1: 2.",
+          "valueOptions": {
+            "min": 1,
+            "max": 5,
+            "step": 0.25,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
           "text": "Custom ground values",
           "type": "section"
         },
@@ -445,6 +475,53 @@
           "text": "HL2 back-hopping (ABH)",
           "type": "switcher",
           "help": "Half-Life 2 mode: keep the jump boost's famous backwards quirk.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "text": "Crouch-jump",
+          "type": "section"
+        },
+        {
+          "id": "bCrouchJump:Air",
+          "text": "Crouch-jump",
+          "type": "switcher",
+          "help": "Press sneak in the air to lift your feet like Half-Life's duck-jump. Works while rising and just after the top, once per jump.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iCrouchJumpHeight:Air",
+          "text": "Crouch-jump height",
+          "type": "dropdown",
+          "help": "Exact per game: HL1 +18 units (0.46 m), HL2 +36 units (0.91 m). Scaled: the same share of Fallout's own jump height.",
+          "valueOptions": {
+            "options": [
+              "Exact per game",
+              "Scaled to Fallout's jump"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "id": "fCrouchJumpWindow:Air",
+          "text": "Window after the top",
+          "type": "slider",
+          "help": "Seconds after the top of the jump that crouch-jump still works.",
+          "valueOptions": {
+            "min": 0,
+            "max": 0.5,
+            "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "bCrouchLandSneak:Air",
+          "text": "Land sneaking",
+          "type": "switcher",
+          "help": "After a crouch-jump you land sneaking, like Half-Life keeps you ducked.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
