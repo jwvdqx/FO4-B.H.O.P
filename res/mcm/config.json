@@ -204,6 +204,15 @@
           }
         },
         {
+          "id": "bThirdPersonAnimSpeed:General",
+          "text": "Third person: animation follows speed (experiment)",
+          "type": "switcher",
+          "help": "In third person your walk/run animation speeds up or slows down to match how fast you really move (Half-Life speeds, kept momentum, ice), so the feet don't slide. It uses the game's animation speed value while you move, so other animations played while moving (reloading) change speed with it. Removed before every save.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "id": "bWallClip:General",
           "text": "Walls take your speed",
           "type": "switcher",

@@ -446,6 +446,29 @@ namespace
 			g_orig(g_handler, ev);
 		}
 
+		// Ledge jump (main thread): Fallout only refuses the jump because its physics says "in the air". For the
+		// length of this one call it reads "on the ground", so Fallout does the jump itself, animation included.
+		// If Fallout looks at something else and still refuses, the movement code notices and jumps without it.
+		void LedgeFire()
+		{
+			auto con = PlayerController();
+			if (!con || !g_orig || !g_hasLast || !g_handler) {
+				return;
+			}
+			alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
+			std::memcpy(buf, g_last, sizeof(RE::ButtonEvent));
+			auto ev = reinterpret_cast<RE::ButtonEvent*>(buf);
+			ev->heldDownSecs = 0.0f;
+			ev->value = 1.0f;
+			ev->next = nullptr;
+			const auto was = con->context.m_currentState;
+			con->context.m_currentState = RE::hknpCharacterState::hknpCharacterStateType::kOnGround;
+			g_orig(g_handler, ev);
+			if (con->context.m_currentState == RE::hknpCharacterState::hknpCharacterStateType::kOnGround) {
+				con->context.m_currentState = was;  // unless Fallout moved it on (to "jumping")
+			}
+		}
+
 		// physics thread: you just landed and a jump is wanted
 		void Request()
 		{
@@ -612,6 +635,7 @@ namespace
 		bool  vzOn{ false };         // we're in charge of your vertical speed
 		float vz{ 0.0f };            // our vertical speed (m/s)
 		bool  hlJump{ false };       // this jump used Half-Life physics (don't learn Fallout's jump from it)
+		long long ledgeTryUntil{ 0 }; // a ledge jump Fallout was asked to do itself: wait for it until this time (ms)
 		bool  ledgePending{ false }; // a ledge jump (jump pressed just after running off an edge) to start this step
 	} g_air;
 

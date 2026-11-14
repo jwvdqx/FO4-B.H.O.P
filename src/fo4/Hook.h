@@ -72,7 +72,23 @@ namespace
 
 		// Stairs and bumps make the game report "in the air" for a moment. Unless you jumped,
 		// short moments like that still count as ground, so you keep full control and friction.
-		const bool jumpedNow = g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f;
+		bool jumpedNow = g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f;
+		// A ledge jump we asked Fallout to do itself (so it plays its jump animation): did it?
+		bool ledgeFallback = false;
+		if (g_air.ledgeTryUntil != 0) {
+			if (rawGround) {
+				g_air.ledgeTryUntil = 0;  // back on the ground: nothing to do
+			} else if (a_vel.z / g_cfg.unitScale > 50.0f) {
+				g_air.ledgeTryUntil = 0;
+				jumpedNow = true;  // Fallout jumped: from here on it's an ordinary jump
+				if (g_cfg.debugLog) {
+					REX::INFO("ledge jump: Fallout did the jump itself (with its animation)");
+				}
+			} else if (NowMs() > g_air.ledgeTryUntil) {
+				g_air.ledgeTryUntil = 0;
+				ledgeFallback = true;  // it didn't: we give the upward speed ourselves (no animation)
+			}
+		}
 		g_air.prevRawGround = rawGround;
 		if (rawGround) {
 			g_air.airTime = 0.0f;
@@ -88,15 +104,26 @@ namespace
 		// Ledge jump: Fallout only jumps while it says you're on the ground. Pressing jump just after running
 		// off an edge (or in one of those short "in the air" moments on stairs) still jumps.
 		bool ledgeJump = false;
-		if (!rawGround && !jumpedNow && !g_air.jumpedThisAir && g_cfg.ledgeJump > 0.0f && g_cfg.mode != Mode::kVanilla && !menus &&
+		if (ledgeFallback && !jumpedNow && !g_air.jumpedThisAir) {
+			ledgeJump = true;
+			g_air.jumpedThisAir = true;
+			g_air.ledgePending = g_cfg.jumpPhysics == 0;  // with Half-Life jumping, HLVertical starts it
+			if (g_cfg.debugLog) {
+				REX::INFO("ledge jump: Fallout didn't jump, doing it ourselves");
+			}
+		}
+		if (!rawGround && !jumpedNow && !ledgeJump && g_air.ledgeTryUntil == 0 && !g_air.jumpedThisAir && g_cfg.ledgeJump > 0.0f && g_cfg.mode != Mode::kVanilla && !menus &&
 			!g_swimming.load() && !g_inPowerArmor.load() && dt > 0.0f && dt <= 0.25f && g_air.airTime <= g_cfg.ledgeJump &&
 			a_vel.z / g_cfg.unitScale < 50.0f) {
 			const long long press = g_jumpPressedMs.load();
 			if (press != 0 && NowMs() - press < 120) {
 				g_jumpPressedMs = 0;
-				ledgeJump = true;
-				g_air.jumpedThisAir = true;
-				g_air.ledgePending = g_cfg.jumpPhysics == 0;  // with Half-Life jumping, HLVertical starts it
+				// First ask Fallout to do a real jump (animation, sound events, everything). If it hasn't
+				// within 70 ms, the upward speed is given by us instead.
+				g_air.ledgeTryUntil = NowMs() + 70;
+				if (auto task = F4SE::GetTaskInterface()) {
+					task->AddTask([]() { AutoJump::LedgeFire(); });
+				}
 			}
 		}
 		const bool onGround = rawGround || (!g_air.jumpedThisAir && g_air.airTime < 0.12f);
@@ -297,6 +324,7 @@ namespace
 			ResetSim(a_vel);
 			g_air.airborneSim = false;
 			g_stats.outSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
+			AnimSpeed::g_wanted = 1.0f;
 			RE::hkVector4f pass = a_vel;
 			if (g_air.vzOn) {
 				pass.z = hlVz;
@@ -551,6 +579,8 @@ namespace
 		g_air.grace = st.grace;
 
 		const float outX = outV.x, outY = outV.y;
+		// third person: how fast you really move compared with what Fallout's animation is playing for
+		AnimSpeed::g_wanted = onGround && !swimHL && vanillaSpeed > 40.0f && wish.mag > 0.2f ? outV.Length() / vanillaSpeed : 1.0f;
 		g_air.lastOut = outV;
 		g_air.hasLastOut = true;
 

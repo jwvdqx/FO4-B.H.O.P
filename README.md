@@ -58,7 +58,9 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   game sends no "still held" events the press is replayed on landing.
 - **Jump buffer** (0.1 s by default): jump pressed a moment before landing jumps as you touch down.
 - **Ledge jump** (0.1 s by default): you can still jump just after running off an edge, and jumps pressed
-  during the short "in the air" moments on stairs are no longer lost. Not in Power Armor.
+  during the short "in the air" moments on stairs are no longer lost. Not in Power Armor. Fallout is asked
+  to do the jump itself first (so its jump animation plays); if it refuses, the mod gives the upward speed
+  (no animation). The debug log says which happened.
 
 - Crouch-jump: press sneak in the air (while rising or just after the top) to lift your feet like Half-Life's
   duck-jump: HL1 +18 units, HL2 +36 units, or scaled to Fallout's own jump. You land sneaking, like HL keeps
@@ -152,7 +154,9 @@ chain with other plugins that changed the same functions. Problems are written t
 - Wall and push detection compare how far you really moved with what the mod asked for; the game gives no
   wall direction, so it's worked out from your motion (and the optional wall probe).
 - Aquaboy and Sneak are found by name (English by default; change the names in the settings file).
-- The ledge jump has no jump animation in third person (Fallout isn't doing the jump).
+- **Third person: animation follows speed** (experiment, off by default): the walk/run animation is sped up
+  or slowed down to match your real speed. It can't help when you slide with no input (Fallout plays the
+  standing animation), and it changes every animation played while moving, not only the legs.
 - Water surfing doesn't bob you in and out of the water like Half-Life (Fallout holds you at the surface);
   your speed behaves the same way (worked out from Half-Life's bobbing and checked in the tests).
 - Swimming is flat: Fallout keeps floating and diving.

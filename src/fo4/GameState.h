@@ -388,6 +388,61 @@ namespace
 		}
 	}
 
+	// ---------------------------------------------------------------------
+	// Third person: Fallout plays your walk/run animation for the speed IT wants you to move at. With
+	// Half-Life speeds, momentum or slippery ground you really move faster or slower, and the feet slide.
+	// The animation is sped up or slowed down by the same ratio through the game's own animation speed
+	// value (AnimationMult), as a temporary change that is taken off before every save, in menus, in first
+	// person and when the option or the mod is off.
+	// ---------------------------------------------------------------------
+	namespace AnimSpeed
+	{
+		std::atomic<float> g_wanted{ 1.0f };  // real speed / Fallout's speed (written by the movement code)
+		float              g_applied{ 0.0f };  // what we've added to AnimationMult (main thread only)
+		float              g_smooth{ 1.0f };
+		int                g_logs{ 0 };
+
+		void Clear()
+		{
+			auto player = RE::PlayerCharacter::GetSingleton();
+			auto avs = RE::ActorValue::GetSingleton();
+			if (g_applied != 0.0f && player && avs && avs->animationMult) {
+				static_cast<RE::ActorValueOwner*>(player)->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *avs->animationMult, -g_applied);
+			}
+			g_applied = 0.0f;
+			g_smooth = 1.0f;
+		}
+
+		void Update(RE::PlayerCharacter* a_player)
+		{
+			auto avs = RE::ActorValue::GetSingleton();
+			if (!g_cfg.animSpeed || g_cfg.mode == Mode::kVanilla || g_firstPerson.load() || !avs || !avs->animationMult) {
+				Clear();
+				return;
+			}
+			auto        owner = static_cast<RE::ActorValueOwner*>(a_player);
+			const float base = owner->GetActorValue(*avs->animationMult) - g_applied;  // the game's own value, without ours
+			if (!std::isfinite(base) || base <= 0.0f) {
+				Clear();
+				return;
+			}
+			float target = std::clamp(g_wanted.load(), 0.7f, 1.6f);
+			if (std::fabs(target - 1.0f) < 0.06f) {
+				target = 1.0f;  // close enough: leave Fallout's animation alone
+			}
+			g_smooth += (target - g_smooth) * 0.5f;
+			const float delta = std::fabs(g_smooth - 1.0f) < 0.02f ? 0.0f : base * (g_smooth - 1.0f);
+			if (std::fabs(delta - g_applied) > 0.02f * base || (delta == 0.0f && g_applied != 0.0f)) {
+				owner->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *avs->animationMult, delta - g_applied);
+				g_applied = delta;
+				if (g_cfg.debugLog && g_logs < 20) {
+					++g_logs;
+					REX::INFO("third person animation speed x{:.2f} (the game's value {:.2f})", g_smooth, base);
+				}
+			}
+		}
+	}
+
 	void UpdateCache()
 	{
 		g_cacheQueued = false;
@@ -422,6 +477,7 @@ namespace
 			                           cur == cam->cameraStates[RE::CameraStates::kIronSights].get());
 		}
 		Perks::Update(player);
+		AnimSpeed::Update(player);
 		ProbeEdge(player);
 		ReadMoveSpeeds(player);
 
