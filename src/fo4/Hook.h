@@ -200,13 +200,12 @@ namespace
 			Camera::OnLand(fallSpeed);
 			if (g_landSneak.exchange(false) && g_cfg.crouchLandSneak) {
 				if (auto task = F4SE::GetTaskInterface()) {
-					task->AddTask([]() {
-						if (auto p = RE::PlayerCharacter::GetSingleton(); p && !p->IsSneaking()) {
-							p->SetSneaking(true);  // Half-Life keeps you ducked after a duck-jump
-						}
-					});
+					task->AddTask([]() { CrouchKey::LandSneaking(); });  // Half-Life keeps you ducked after a duck-jump
 				}
 			}
+		}
+		if (g_swimming.load() || menus) {
+			g_landSneak = false;  // the crouch-jump ended in water or a menu: don't sneak at some later landing
 		}
 		if (rawGround && !g_air.measuring) {
 			g_air.hlJump = false;

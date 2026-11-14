@@ -488,14 +488,43 @@ namespace
 		using OnButton_t = void (*)(void*, const RE::ButtonEvent*);
 		OnButton_t g_orig{ nullptr };
 
+		// main thread only: the last press seen, to replay
+		void*                 g_handler{ nullptr };
+		alignas(16) std::byte g_last[sizeof(RE::ButtonEvent)]{};
+		bool                  g_hasLast{ false };
+
 		void Hooked(void* a_this, const RE::ButtonEvent* a_event)
 		{
 			if (a_event && a_event->QJustPressed()) {
 				auto p = RE::PlayerCharacter::GetSingleton();
 				g_crouchWasSneaking = p && p->IsSneaking();  // before Fallout toggles it
 				g_crouchPressedMs = NowMs();                 // the movement code decides if it's a crouch-jump
+				std::memcpy(g_last, a_event, sizeof(RE::ButtonEvent));
+				g_handler = a_this;
+				g_hasLast = true;
 			}
 			g_orig(a_this, a_event);  // Fallout still gets the key as normal
+		}
+
+		// Land sneaking after a crouch-jump (main thread). Fallout is asked the same way the sneak key asks it,
+		// by replaying your press, so its own sneak on/off stays in step and the next press stands you up.
+		// (Setting the sneaking state directly could leave you stuck sneaking.)
+		void LandSneaking()
+		{
+			auto p = RE::PlayerCharacter::GetSingleton();
+			if (!p || p->IsSneaking() || !g_orig || !g_hasLast || !g_handler) {
+				return;  // already sneaking (Fallout took the press in the air), or nothing to replay
+			}
+			alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
+			std::memcpy(buf, g_last, sizeof(RE::ButtonEvent));
+			auto ev = reinterpret_cast<RE::ButtonEvent*>(buf);
+			ev->heldDownSecs = 0.0f;
+			ev->value = 1.0f;
+			ev->next = nullptr;
+			g_orig(g_handler, ev);
+			if (g_cfg.debugLog) {
+				REX::INFO("crouch-jump: landed, sneak asked through the sneak key (sneaking now: {})", p->IsSneaking());
+			}
 		}
 
 		void Install()
