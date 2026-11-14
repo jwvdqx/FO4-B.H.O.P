@@ -448,7 +448,7 @@ namespace
 
 		// Ledge jump (main thread): Fallout only refuses the jump because its physics says "in the air". For the
 		// length of this one call it reads "on the ground", so Fallout does the jump itself, animation included.
-		// If Fallout looks at something else and still refuses, the movement code notices and jumps without it.
+		// If Fallout looks at something else and still refuses, there is no jump (the debug log says so).
 		void LedgeFire()
 		{
 			auto con = PlayerController();
@@ -636,7 +636,6 @@ namespace
 		float vz{ 0.0f };            // our vertical speed (m/s)
 		bool  hlJump{ false };       // this jump used Half-Life physics (don't learn Fallout's jump from it)
 		long long ledgeTryUntil{ 0 }; // a ledge jump Fallout was asked to do itself: wait for it until this time (ms)
-		bool  ledgePending{ false }; // a ledge jump (jump pressed just after running off an edge) to start this step
 	} g_air;
 
 	float FalloutJumpHeightHL()
@@ -692,8 +691,7 @@ namespace
 		g_air.hasPrevVz = !a_rawGround;
 
 		float outVz = a_inVz;
-		if (a_rawGround || g_cfg.mode == Mode::kVanilla) {
-			g_air.ledgePending = false;
+		if (a_rawGround || g_cfg.mode == Mode::kVanilla || !g_cfg.crouchJump) {
 			return outVz;
 		}
 
@@ -719,20 +717,9 @@ namespace
 			}
 		}
 
+		// a fresh crouch press in the air?
 		const float vz = a_actualVz;  // m/s, + is up
-		if (g_air.ledgePending) {
-			// ledge jump: Fallout won't jump once you're off the edge, so we give its jump's upward speed
-			g_air.ledgePending = false;
-			const float newVz = hlcore::JumpSpeed(g_air.gravity, FalloutJumpHeightHL() * g_cfg.unitScale);
-			g_air.boostVz = newVz - a_inVz;
-			g_air.boostMode = 0;
-			outVz = newVz;
-			if (g_cfg.debugLog) {
-				REX::INFO("ledge jump: vertical {:.2f} -> {:.2f} m/s", vz, newVz);
-			}
-		} else if (!g_cfg.crouchJump) {
-			// no crouch-jump
-		} else if (const float lift = CrouchJumpLift(vz, g_air.gravity); lift > 0.0f) {  // a fresh crouch press in the air?
+		if (const float lift = CrouchJumpLift(vz, g_air.gravity); lift > 0.0f) {
 			const float newVz = hlmath::CrouchLiftSpeed(vz, g_air.gravity, lift);
 			g_air.boostVz = newVz - a_inVz;
 			g_air.boostMode = 0;

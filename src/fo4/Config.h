@@ -120,7 +120,6 @@ namespace
 		int   soundSet{ 0 };  // 0 = follow iMode, 1 = Half-Life 1, 2 = Half-Life 2
 		int   surfaceSet[17]{};  // per surface (kSurfaces): 0 = the sound set above, 1 = Half-Life 1, 2 = Half-Life 2
 		bool  muteVanillaFootsteps{ true };
-		bool  animSpeed{ false };     // third person: walk/run animation speed follows your real speed (experiment)
 		int   thirdPersonSteps{ 1 };  // third person: 0 = Half-Life's step timing, 1 = steps follow the walking animation
 		bool  jumpLandSounds{ true };
 		bool  waterSounds{ true };
@@ -256,7 +255,6 @@ namespace
 					B("bEnableInPowerArmor", g_cfg.enableInPowerArmor);
 					B("bWallClip", g_cfg.wallClip);
 					B("bWallProbe", g_cfg.wallProbe);
-					B("bThirdPersonAnimSpeed", g_cfg.animSpeed);
 					F("fSlopeAngle", g_cfg.slopeAngle);
 					B("bWaterSurf", g_cfg.waterSurf);
 					B("bSprintSound", g_cfg.sprintSound);
@@ -469,7 +467,6 @@ namespace
 		c.unitScale = g_cfg.unitScale;
 		c.perkMessages = g_cfg.perkMessages;
 		c.enableInPowerArmor = g_cfg.enableInPowerArmor;
-		c.animSpeed = g_cfg.animSpeed;
 		for (int i = 0; i < 6; ++i) {
 			c.perkNames[i] = g_cfg.perkNames[i];
 		}

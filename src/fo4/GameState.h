@@ -393,7 +393,7 @@ namespace
 	// Half-Life speeds, momentum or slippery ground you really move faster or slower, and the feet slide.
 	// The animation is sped up or slowed down by the same ratio through the game's own animation speed
 	// value (AnimationMult), as a temporary change that is taken off before every save, in first
-	// person and when the option or the mod is off.
+	// person and when the mod is off. Always on while the mod is active.
 	// ---------------------------------------------------------------------
 	namespace AnimSpeed
 	{
@@ -416,7 +416,7 @@ namespace
 		void Update(RE::PlayerCharacter* a_player)
 		{
 			auto avs = RE::ActorValue::GetSingleton();
-			if (!g_cfg.animSpeed || g_cfg.mode == Mode::kVanilla || g_firstPerson.load() || !avs || !avs->animationMult) {
+			if (g_cfg.mode == Mode::kVanilla || g_firstPerson.load() || !avs || !avs->animationMult) {
 				Clear();
 				return;
 			}

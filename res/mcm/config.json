@@ -204,15 +204,6 @@
           }
         },
         {
-          "id": "bThirdPersonAnimSpeed:General",
-          "text": "Third person: animation follows speed (experiment)",
-          "type": "switcher",
-          "help": "In third person your walk/run animation speeds up or slows down to match how fast you really move (Half-Life speeds, kept momentum, ice), so the feet don't slide. It uses the game's animation speed value while you move, so other animations played while moving (reloading) change speed with it. Removed before every save.",
-          "valueOptions": {
-            "sourceType": "ModSettingBool"
-          }
-        },
-        {
           "id": "bWallClip:General",
           "text": "Walls take your speed",
           "type": "switcher",
@@ -568,7 +559,7 @@
           "id": "fLedgeJump:Air",
           "text": "Ledge jump",
           "type": "slider",
-          "help": "Seconds after running off an edge during which you can still jump. Also saves jumps pressed on stairs and bumps. Not in Power Armor. 0 = off.",
+          "help": "Seconds after running off an edge during which you can still jump. Also saves jumps pressed on stairs and bumps. It is always Fallout's own jump, with its animation. Not in Power Armor. 0 = off.",
           "valueOptions": {
             "min": 0,
             "max": 0.3,
