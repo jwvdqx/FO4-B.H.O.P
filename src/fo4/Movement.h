@@ -482,6 +482,8 @@ namespace
 	std::atomic<long long> g_crouchPressedMs{ 0 };  // when the sneak key was last pressed (ms)
 	std::atomic_bool       g_landSneak{ false };     // land sneaking after a crouch-jump
 	std::atomic_bool       g_crouchWasSneaking{ false };
+	std::atomic<long long> g_sneakWatchUntil{ 0 };   // a crouch-jump landed you in sneak: watch that you can stand up (ms)
+	std::atomic<long long> g_standAskedMs{ 0 };      // you pressed sneak to stand up at this time (ms), 0 = not waiting
 
 	namespace CrouchKey
 	{
@@ -499,11 +501,28 @@ namespace
 				auto p = RE::PlayerCharacter::GetSingleton();
 				g_crouchWasSneaking = p && p->IsSneaking();  // before Fallout toggles it
 				g_crouchPressedMs = NowMs();                 // the movement code decides if it's a crouch-jump
+				if (g_crouchWasSneaking.load() && NowMs() < g_sneakWatchUntil.load()) {
+					g_standAskedMs = NowMs();  // standing up after a crouch-jump: checked a moment later (StandCheck)
+				}
 				std::memcpy(g_last, a_event, sizeof(RE::ButtonEvent));
 				g_handler = a_this;
 				g_hasLast = true;
 			}
 			g_orig(a_this, a_event);  // Fallout still gets the key as normal
+		}
+
+		// Safety net (main thread): you pressed sneak to stand up after a crouch-jump and, almost half a second
+		// later, Fallout still has you sneaking. Its sneak state got out of step; stand you up.
+		void StandCheck()
+		{
+			auto p = RE::PlayerCharacter::GetSingleton();
+			if (!p || !p->IsSneaking()) {
+				g_sneakWatchUntil = 0;  // you stood up fine
+				return;
+			}
+			p->SetSneaking(false);
+			g_sneakWatchUntil = NowMs() + 30000;  // keep watching until a press stands you up by itself
+			REX::WARN("crouch-jump: the sneak key didn't stand you up; stood you up (still sneaking now: {})", p->IsSneaking());
 		}
 
 		// Land sneaking after a crouch-jump (main thread). Fallout is asked the same way the sneak key asks it,
@@ -512,8 +531,11 @@ namespace
 		void LandSneaking()
 		{
 			auto p = RE::PlayerCharacter::GetSingleton();
+			if (p && p->IsSneaking()) {
+				g_sneakWatchUntil = NowMs() + 30000;  // Fallout took the press in the air: still watch the stand-up
+			}
 			if (!p || p->IsSneaking() || !g_orig || !g_hasLast || !g_handler) {
-				return;  // already sneaking (Fallout took the press in the air), or nothing to replay
+				return;  // already sneaking, or nothing to replay
 			}
 			alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
 			std::memcpy(buf, g_last, sizeof(RE::ButtonEvent));
@@ -522,6 +544,7 @@ namespace
 			ev->value = 1.0f;
 			ev->next = nullptr;
 			g_orig(g_handler, ev);
+			g_sneakWatchUntil = NowMs() + 30000;
 			if (g_cfg.debugLog) {
 				REX::INFO("crouch-jump: landed, sneak asked through the sneak key (sneaking now: {})", p->IsSneaking());
 			}

@@ -38,6 +38,8 @@ namespace
 		Perks::g_baseline = false;  // the perk line shows again for this save
 		g_crouchPressedMs = 0;
 		g_landSneak = false;
+		g_sneakWatchUntil = 0;
+		g_standAskedMs = 0;
 		g_edgeAhead = false;
 		g_stats = Stats{};
 		Sounds::g_water = Sounds::WaterState{};

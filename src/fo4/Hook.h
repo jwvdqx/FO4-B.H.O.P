@@ -204,6 +204,12 @@ namespace
 				}
 			}
 		}
+		if (const long long asked = g_standAskedMs.load(); asked != 0 && NowMs() - asked > 400) {
+			g_standAskedMs = 0;
+			if (auto task = F4SE::GetTaskInterface()) {
+				task->AddTask([]() { CrouchKey::StandCheck(); });
+			}
+		}
 		if (g_swimming.load() || menus) {
 			g_landSneak = false;  // the crouch-jump ended in water or a menu: don't sneak at some later landing
 		}
