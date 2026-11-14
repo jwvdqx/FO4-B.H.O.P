@@ -16,7 +16,7 @@
       "type": "text"
     },
     {
-      "text": "General: mode, sounds, smoothness, input and speeds.",
+      "text": "General: master switch, profile, mode, input and speeds.",
       "type": "text"
     },
     {
@@ -52,6 +52,42 @@
     {
       "pageDisplayName": "General",
       "content": [
+        {
+          "text": "Master switch",
+          "type": "section"
+        },
+        {
+          "id": "bEnabled:General",
+          "text": "B.H.O.P. enabled",
+          "type": "switcher",
+          "help": "Off = plain Fallout 4: no Half-Life movement, camera or sounds. Your settings are kept.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "text": "Profile",
+          "type": "section"
+        },
+        {
+          "id": "iProfile:General",
+          "text": "Profile",
+          "type": "dropdown",
+          "help": "My settings: everything you set in this menu, saved as you change it. The other three are ready-made and never change your settings: pick My settings again to get yours back. Full Half-Life 1 / 2: the original game with no helpers (its speeds, its jump, exact timing, no perks). Claude's choice: Half-Life 2 feel tuned for Fallout and gamepads.",
+          "valueOptions": {
+            "options": [
+              "My settings",
+              "Full Half-Life 1",
+              "Full Half-Life 2",
+              "Claude's choice"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
+          "text": "With a ready-made profile, the options below show your own settings; they are saved but only used with My settings.",
+          "type": "text"
+        },
         {
           "text": "Mode",
           "type": "section"
@@ -147,6 +183,18 @@
           }
         },
         {
+          "id": "fBaseSpeedCap:General",
+          "text": "Base speed cap",
+          "type": "slider",
+          "help": "Your base walk/run/sprint speed never goes above this (Half-Life units per second; Fallout's run is about 210, sprint 280). Buffs, chems, Power Armor and perks apply after the cap. 0 = no cap.",
+          "valueOptions": {
+            "min": 0,
+            "max": 600,
+            "step": 5,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
           "id": "bEnableInPowerArmor:General",
           "text": "Half-Life movement in Power Armor",
           "type": "switcher",
@@ -171,6 +219,18 @@
           "help": "When you hit a wall, the mod checks the real wall surface to get its exact direction, for cleaner wall slides. Off: it uses the guess from how you moved.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fSlopeAngle:General",
+          "text": "Half-Life slopes up to (degrees)",
+          "type": "slider",
+          "help": "On slopes up to this steep you keep your heading and speed and simply climb, like Half-Life, instead of being pushed sideways and slowed when you cross a slope at an angle. Both Half-Life games use about 45. 0 = off (Fallout's slopes).",
+          "valueOptions": {
+            "min": 0,
+            "max": 60,
+            "step": 1,
+            "sourceType": "ModSettingFloat"
           }
         },
         {
@@ -484,6 +544,30 @@
           }
         },
         {
+          "id": "fJumpBuffer:Air",
+          "text": "Jump buffer",
+          "type": "slider",
+          "help": "Press jump up to this many seconds before you land and you jump the moment you touch down. Makes bunnyhop timing much easier on a gamepad. 0 = off (original timing).",
+          "valueOptions": {
+            "min": 0,
+            "max": 0.3,
+            "step": 0.01,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "fLedgeJump:Air",
+          "text": "Ledge jump",
+          "type": "slider",
+          "help": "Seconds after running off an edge during which you can still jump. Also saves jumps pressed on stairs and bumps. Not in Power Armor. 0 = off.",
+          "valueOptions": {
+            "min": 0,
+            "max": 0.3,
+            "step": 0.01,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
           "id": "bHL1BhopCap:Air",
           "text": "HL1 bunnyhop speed cap",
           "type": "switcher",
@@ -549,6 +633,19 @@
           "help": "Press sneak in the air to lift your feet like Half-Life's duck-jump. Works while rising and just after the top, once per jump.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iCrouchJumpKey:Air",
+          "text": "Crouch-jump with",
+          "type": "dropdown",
+          "help": "Sneak: press sneak in the air. Sneak or jump: pressing jump again while you're still going up works too (easier on a gamepad; you don't land sneaking). Not in Power Armor.",
+          "valueOptions": {
+            "options": [
+              "Sneak",
+              "Sneak or jump again"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -703,6 +800,19 @@
           "help": "Only the player's. NPC footsteps are never touched.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "iThirdPersonSteps:Sounds",
+          "text": "Third person steps",
+          "type": "dropdown",
+          "help": "Follow animation: in third person the Half-Life step plays when your character's foot comes down, so it matches any walking animation (needs Mute vanilla player footsteps). Half-Life timing: steps on Half-Life's own timer, as in first person.",
+          "valueOptions": {
+            "options": [
+              "Half-Life timing",
+              "Follow animation"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -1126,6 +1236,20 @@
           }
         },
         {
+          "id": "iPerkMessages:Perks",
+          "text": "On-screen notes",
+          "type": "dropdown",
+          "help": "Shows that your perks are picked up. On rank up: a note when a perk rank gives you something. Also after loading: one line listing the perks in use.",
+          "valueOptions": {
+            "options": [
+              "Off",
+              "On rank up",
+              "Also after loading"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
           "text": "Moving Target: faster sprint (+4% per rank).",
           "type": "text"
         },
@@ -1150,7 +1274,11 @@
           "type": "text"
         },
         {
-          "text": "Action Boy / Action Girl: wider bunnyhop window; max rank unlocks auto-jump.",
+          "text": "Action Boy / Action Girl: wider bunnyhop window; max rank unlocks auto-jump (hold jump, keyboard or gamepad).",
+          "type": "text"
+        },
+        {
+          "text": "Perks are found by their ID, so other languages and perk mods that change the vanilla perks work.",
           "type": "text"
         }
       ]

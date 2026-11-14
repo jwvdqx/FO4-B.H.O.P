@@ -82,6 +82,23 @@ namespace
 				g_air.jumpedThisAir = true;
 			}
 		}
+		if (jumpedNow) {
+			g_jumpPressedMs = 0;  // that press became this jump
+		}
+		// Ledge jump: Fallout only jumps while it says you're on the ground. Pressing jump just after running
+		// off an edge (or in one of those short "in the air" moments on stairs) still jumps.
+		bool ledgeJump = false;
+		if (!rawGround && !jumpedNow && !g_air.jumpedThisAir && g_cfg.ledgeJump > 0.0f && g_cfg.mode != Mode::kVanilla && !menus &&
+			!g_swimming.load() && !g_inPowerArmor.load() && dt > 0.0f && dt <= 0.25f && g_air.airTime <= g_cfg.ledgeJump &&
+			a_vel.z / g_cfg.unitScale < 50.0f) {
+			const long long press = g_jumpPressedMs.load();
+			if (press != 0 && NowMs() - press < 120) {
+				g_jumpPressedMs = 0;
+				ledgeJump = true;
+				g_air.jumpedThisAir = true;
+				g_air.ledgePending = g_cfg.jumpPhysics == 0;  // with Half-Life jumping, HLVertical starts it
+			}
+		}
 		const bool onGround = rawGround || (!g_air.jumpedThisAir && g_air.airTime < 0.12f);
 
 		// water: how deep you stand (game units) and Half-Life's water level (1 feet, 2 waist, 3 eyes under),
@@ -173,6 +190,12 @@ namespace
 		} else {
 			g_air.sinceLanding = std::min(g_air.sinceLanding + dt, 10.0f);
 		}
+		if (landEvent && g_cfg.debugLog && g_stats.landLogs < 30) {
+			++g_stats.landLogs;
+			// to check fall damage with Half-Life gravity: Fallout works it out from these two
+			REX::INFO("landing: fall speed {:.0f} HL u/s | Fallout's fall start height {:.2f}, fall time {:.2f} s", fallSpeed,
+				a_this->fallStartHeight, a_this->fallTime);
+		}
 		if (landEvent && !menus) {
 			Camera::OnLand(fallSpeed);
 			if (g_landSneak.exchange(false) && g_cfg.crouchLandSneak) {
@@ -193,7 +216,7 @@ namespace
 			g_air.boostVz = 0.0f;
 			g_air.boostMode = 0;
 		}
-		Sounds::Update(a_this, dt, onGround, actual, menus, jumpedNow, landEvent, fallSpeed);
+		Sounds::Update(a_this, dt, onGround, actual, menus, jumpedNow || ledgeJump, landEvent, fallSpeed);
 		Sounds::UpdateWater(waterLevel, JumpHeld(), dt, menus);
 		if (onGround) {
 			g_air.maxFall = 0.0f;
@@ -214,7 +237,7 @@ namespace
 			wasSprinting = sprinting;
 		}
 
-		const bool jumped = jumpedNow;
+		const bool jumped = jumpedNow || ledgeJump;
 		const bool landed = !g_air.prevGround && onGround && g_air.jumpedThisAir;  // landing from a real jump
 		g_air.prevGround = onGround;
 		if (rawGround) {
@@ -257,7 +280,7 @@ namespace
 		// vertical: optional Half-Life jumping and gravity (we're in charge while you're in the air)
 		float hlVz = a_vel.z;
 		if (!skip && g_cfg.jumpPhysics != 0 && !swimHL) {
-			hlVz = HLVertical(a_vel.z, rawGround, onGround, jumpedNow, dt);
+			hlVz = HLVertical(a_vel.z, rawGround, onGround, jumpedNow || ledgeJump, dt);
 		} else {
 			g_air.vzOn = false;
 		}
@@ -272,6 +295,10 @@ namespace
 			RE::hkVector4f pass = a_vel;
 			if (g_air.vzOn) {
 				pass.z = hlVz;
+			} else if (!skip) {
+				pass.z = CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);  // ledge jump and crouch-jump work without air control too
+			} else {
+				g_air.ledgePending = false;
 			}
 			g_air.sentVz = pass.z;
 			PrintStats();
@@ -470,8 +497,16 @@ namespace
 				const float perkBonus = Perks::Bonus() ? 0.025f * static_cast<float>(Perks::Rank(Perks::kActionBoy)) : 0.0f;
 				g_air.grace = g_cfg.bhopGrace + perkBonus;
 				const bool autoJump = g_cfg.autoJump == 2 || (g_cfg.autoJump == 1 && Perks::Bonus() && Perks::MaxRank(Perks::kActionBoy));
-				if (autoJump) {
-					g_autoJumpUntil = NowMs() + 150;  // the jump key handler re-jumps if you're holding jump
+				if (autoJump && JumpHeld()) {
+					AutoJump::Request();  // holding jump (keyboard or gamepad): jump again right away
+				}
+			}
+			if (landEvent && g_cfg.jumpBuffer > 0.0f) {
+				// jump buffer: jump pressed a moment before landing still counts
+				const long long press = g_jumpPressedMs.load();
+				if (press != 0 && NowMs() - press <= static_cast<long long>(g_cfg.jumpBuffer * 1000.0f)) {
+					g_jumpPressedMs = 0;
+					AutoJump::Request();
 				}
 			}
 			const float surface = SurfaceFrictionFor(a_this->supportMaterial, waterDepth);
@@ -518,6 +553,11 @@ namespace
 		out.x = outX * g_cfg.unitScale;
 		out.y = outY * g_cfg.unitScale;
 		out.z = swimHL ? a_vel.z : g_air.vzOn ? hlVz : CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
+		if (rawGround && hasGround && !swimHL && g_cfg.slopeAngle > 0.0f) {
+			// Half-Life slopes: climb without being turned or slowed (see SlopeClimbVz)
+			const float minNz = std::cos(g_cfg.slopeAngle * 0.01745329f);
+			out.z = hlcore::SlopeClimbVz(outV, out.z / g_cfg.unitScale, gnx, gny, gnz, minNz) * g_cfg.unitScale;
+		}
 		g_air.sentVz = out.z;
 		{
 			const float sp = std::hypot(outX, outY);

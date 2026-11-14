@@ -31,6 +31,27 @@ namespace
 		enum : int { kMovingTarget, kStrongBack, kAdamantium, kAquaboy, kSneak, kActionBoy };
 
 		std::string g_resolvedNames;  // the names g_list was built from (main thread only)
+		std::string g_title[kCount];  // each perk's name as your game shows it (main thread only)
+		int         g_shown[kCount]{};     // ranks already announced (main thread only)
+		bool        g_baseline{ false };   // false = first look after loading a save: nothing announced yet
+
+		// The perks' rank 1 in Fallout4.esm. Form IDs stay the same whatever language the game is in and
+		// whatever a mod changed about the perk (name, ranks, requirements), so these are found first;
+		// later ranks come from each perk's own "next rank" link. 0 = found by name only.
+		constexpr std::uint32_t kFormIDs[kCount]{ 0x0004DDEE, 0x0004B24E, 0x0004C92D, 0, 0, 0x0004D869 };
+		constexpr const char*   kEditorIDs[kCount]{ "MovingTarget01", "StrongBack01", "AdamantiumSkeleton01", "Aquaboy01", "Sneak01", "ActionBoy01" };
+		constexpr const char*   kEnglish[kCount]{ "Moving Target", "Strong Back", "Adamantium Skeleton", "Aquaboy", "Sneak", "Action Boy" };
+
+		void AddChain(int a_idx, RE::BGSPerk* a_perk)
+		{
+			auto& l = g_list[a_idx];
+			for (int guard = 0; a_perk && guard < 12; ++guard, a_perk = a_perk->nextPerk) {
+				if (std::find(l.begin(), l.end(), a_perk) != l.end()) {
+					return;  // already have it (and everything after it)
+				}
+				l.push_back(a_perk);
+			}
+		}
 
 		// Main thread only. g_list is only ever touched on the main thread; the physics thread reads
 		// the published rank counts (g_count / g_rank) instead.
@@ -51,8 +72,34 @@ namespace
 			if (!dh) {
 				return;
 			}
+			int byId[kCount]{};
+			// 1) by form ID / editor ID (any language, any perk mod that edits the vanilla perks)
+			for (int i = 0; i < kCount; ++i) {
+				if (kFormIDs[i] != 0) {
+					AddChain(i, RE::TESForm::GetFormByID<RE::BGSPerk>(kFormIDs[i]));
+				}
+				AddChain(i, RE::TESForm::GetFormByEditorID<RE::BGSPerk>(kEditorIDs[i]));
+				// your own entries in the settings file: a form ID like 0x0004D869 works as well as a name
+				std::string_view list = g_cfg.perkNames[i];
+				while (!list.empty()) {
+					const auto        bar = list.find('|');
+					const std::string item(list.substr(0, bar));
+					if (item.rfind("0x", 0) == 0) {
+						try {
+							AddChain(i, RE::TESForm::GetFormByID<RE::BGSPerk>(static_cast<std::uint32_t>(std::stoul(item, nullptr, 16))));
+						} catch (...) {
+						}
+					}
+					if (bar == std::string_view::npos) {
+						break;
+					}
+					list.remove_prefix(bar + 1);
+				}
+				byId[i] = static_cast<int>(g_list[i].size());
+			}
+			// 2) by name (ranks a mod added as separate perks, and perks we have no ID for)
 			for (auto perk : dh->GetFormArray<RE::BGSPerk>()) {
-				if (!perk) {
+				if (!perk || !perk->data.playable) {
 					continue;
 				}
 				const auto name = Lower(std::string(RE::TESFullName::GetFullName(*perk)));
@@ -72,18 +119,53 @@ namespace
 					}
 				}
 				if (idx >= 0) {
-					g_list[idx].push_back(perk);
+					AddChain(idx, perk);
 				}
 			}
 			for (int i = 0; i < kCount; ++i) {
 				g_count[i] = static_cast<int>(g_list[i].size());
+				g_title[i] = kEnglish[i];
+				if (!g_list[i].empty()) {
+					if (const auto t = std::string(RE::TESFullName::GetFullName(*g_list[i].front())); !t.empty()) {
+						g_title[i] = t;
+					}
+				}
+				REX::INFO("Perk {}: {} rank(s) found ({} by ID, {} by name){}", kEnglish[i], g_list[i].size(), byId[i],
+					static_cast<int>(g_list[i].size()) - byId[i], g_list[i].empty() ? " - NOT FOUND, its bonus stays off" : "");
 			}
-			REX::INFO("Perks found (ranks): Moving Target {}, Strong Back {}, Adamantium Skeleton {}, Aquaboy {}, Sneak {}, Action Boy {}",
-				g_list[0].size(), g_list[1].size(), g_list[2].size(), g_list[3].size(), g_list[4].size(), g_list[5].size());
+		}
+
+		// What a rank gives you, for the on-screen note.
+		std::string Effect(int a_idx, int a_rank, bool a_max)
+		{
+			const bool unlock = g_cfg.perkMode == 2;
+			switch (a_idx) {
+			case kMovingTarget:
+				if (unlock && a_rank == 1) {
+					return "bunnyhopping unlocked";
+				}
+				if (unlock && a_rank == 3) {
+					return "back-hopping unlocked";
+				}
+				return "faster sprint";
+			case kStrongBack: return "weight slows you less";
+			case kAdamantium: return "softer landings";
+			case kAquaboy: return "water no longer drags you";
+			case kSneak: return "quieter steps while sneaking";
+			case kActionBoy: return a_max && g_cfg.autoJump == 1 ? "hold jump to bunnyhop" : "more time to bunnyhop";
+			default: return {};
+			}
+		}
+
+		void Notify(const std::string& a_text)
+		{
+			RE::SendHUDMessage::ShowHUDMessage(a_text.c_str(), nullptr, true, true);
+			REX::INFO("on screen: {}", a_text);
 		}
 
 		void Update(RE::PlayerCharacter* a_player)
 		{
+			int ranks[kCount]{};
 			for (int i = 0; i < kCount; ++i) {
 				int r = 0;
 				for (auto p : g_list[i]) {
@@ -92,6 +174,34 @@ namespace
 					}
 				}
 				g_rank[i] = r;
+				ranks[i] = r;
+			}
+			// on-screen notes, so you can see the perks are picked up: one line after loading, and one
+			// whenever you gain a rank
+			if (g_cfg.perkMode == 0 || g_cfg.perkMessages == 0 || g_cfg.mode == Mode::kVanilla) {
+				g_baseline = false;
+				return;
+			}
+			if (!g_baseline) {
+				g_baseline = true;
+				std::string line;
+				for (int i = 0; i < kCount; ++i) {
+					g_shown[i] = ranks[i];
+					if (ranks[i] > 0) {
+						line += (line.empty() ? "" : ", ") + g_title[i] + " " + std::to_string(ranks[i]) + "/" + std::to_string(g_list[i].size());
+					}
+				}
+				if (g_cfg.perkMessages == 2 && !line.empty()) {
+					Notify("B.H.O.P. perks: " + line);
+				}
+				return;
+			}
+			for (int i = 0; i < kCount; ++i) {
+				if (ranks[i] > g_shown[i]) {
+					const bool max = ranks[i] >= static_cast<int>(g_list[i].size());
+					Notify("B.H.O.P.: " + g_title[i] + " " + std::to_string(ranks[i]) + " - " + Effect(i, ranks[i], max));
+				}
+				g_shown[i] = ranks[i];
 			}
 		}
 

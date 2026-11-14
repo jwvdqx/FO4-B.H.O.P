@@ -367,7 +367,14 @@ namespace
 		{
 			float timer{ 0.0f };
 			bool  left{ false };
+			float since{ 10.0f };   // seconds since the last step or landing sound
+			float noAnim{ 0.0f };   // third person: seconds of walking without a footfall from the animation
 		} g_step;
+
+		// Third person: the walking animation's own footfalls (the vanilla footstep events we mute) time the
+		// Half-Life steps, so they land with your feet whatever animations you use. Set on the main thread.
+		std::atomic_bool g_animStep{ false };
+		bool             g_footstepHooked{ false };
 
 		std::string SurfaceCategory(RE::bhkCharacterController* a_con, float& a_waterDepth)
 		{
@@ -436,6 +443,7 @@ namespace
 					if (vol > 0.0f) {
 						PlayStep(a_con, vol);
 						g_step.timer = g_cfg.runInterval;
+						g_step.since = 0.0f;
 					}
 					if (set == 1 && g_cfg.hl1FallPain && fall >= g_cfg.fallPainSpeed) {
 						Queue(1, "pl_fallpain", 1, 1.0f);  // pl_fallpain3, as in Half-Life
@@ -446,18 +454,45 @@ namespace
 			}
 
 			g_step.timer = std::max(0.0f, g_step.timer - a_dt);
+			g_step.since = std::min(g_step.since + a_dt, 10.0f);
 
 			// swimming: no footsteps (the swim and breathing sounds are UpdateWater's)
 			if (g_swimming.load()) {
+				g_animStep = false;
 				return;
 			}
 
-			if (!a_onGround || hSpeed < 1.0f || g_step.timer > 0.0f) {
+			// third person: step when the animation puts a foot down, not on Half-Life's timer
+			bool animStep = false;
+			if (g_cfg.thirdPersonSteps == 1 && !g_firstPerson.load() && g_footstepHooked && g_cfg.muteVanillaFootsteps) {
+				animStep = g_animStep.exchange(false);
+				if (!a_onGround || hSpeed < 1.0f) {
+					g_step.noAnim = 0.0f;
+					return;
+				}
+				if (animStep) {
+					g_step.noAnim = 0.0f;
+					if (g_step.since < 0.1f) {
+						return;  // a landing sound just played for this footfall
+					}
+				} else {
+					// no footfall yet: wait for it. Animations with no footstep events at all (after a second of
+					// walking with none) fall back to Half-Life's timing.
+					g_step.noAnim += a_dt;
+					if (g_step.noAnim < 1.0f) {
+						return;
+					}
+				}
+			} else {
+				g_animStep = false;
+			}
+
+			if (!a_onGround || hSpeed < 1.0f || (!animStep && g_step.timer > 0.0f)) {
 				return;
 			}
 			const bool hl1 = set == 1;
 			// HL2 needs walking speed for a step; HL1 steps at any speed (PM_UpdateStepSound)
-			if (!hl1 && hSpeed < std::max(g_stepVelWalk, g_cfg.minStepSpeed)) {
+			if (!hl1 && !animStep && hSpeed < std::max(g_stepVelWalk, g_cfg.minStepSpeed)) {
 				return;
 			}
 
@@ -488,6 +523,7 @@ namespace
 				}
 			}
 			g_step.timer = interval;
+			g_step.since = 0.0f;
 
 			const int  catSet = SetFor(cat);
 			const auto group = GroupFor(catSet, cat);
@@ -660,6 +696,9 @@ namespace
 				}
 			}
 			if (g_cfg.muteVanillaFootsteps && SoundSet() != 0 && g_ready && HasSounds(SoundSet()) && IsPlayerFootstep(a_event)) {
+				if (!g_firstPerson.load()) {
+					g_animStep = true;  // third person: this footfall plays the Half-Life step instead
+				}
 				return 0;  // kContinue: other listeners still get the event, only the sound is skipped
 			}
 			return g_origFootstep(a_sink, a_event, a_source);
@@ -684,6 +723,7 @@ namespace
 					auto* slot = reinterpret_cast<std::uintptr_t*>(v.vtbl) + 1;  // ProcessEvent
 					g_origFootstep = reinterpret_cast<ProcessEvent_t>(*slot);
 					REL::WriteSafeData(reinterpret_cast<std::uintptr_t>(slot), reinterpret_cast<std::uintptr_t>(&HookedFootstep));
+					g_footstepHooked = true;
 					REX::INFO("Hooked footstep sounds (vtable {:X}, offset {:X})", v.vtbl - Game().base, off);
 					return;
 				}

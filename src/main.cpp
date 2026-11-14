@@ -33,6 +33,9 @@ namespace
 		g_air = AirState{};
 		g_input = InputState{};
 		g_autoJumpUntil = 0;
+		g_jumpPressedMs = 0;
+		g_jumpDown = false;
+		Perks::g_baseline = false;  // the perk line shows again for this save
 		g_crouchPressedMs = 0;
 		g_landSneak = false;
 		g_edgeAhead = false;

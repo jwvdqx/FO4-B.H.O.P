@@ -258,6 +258,20 @@ namespace hlcore
 		return { a_v.x - a_nx * d, a_v.y - a_ny * d };
 	}
 
+	// Half-Life slopes: on a slope you can walk on (the originals: floor normal z >= 0.7, about 45 degrees)
+	// you keep your heading and your speed over the ground; you just climb. The game instead bends a
+	// level velocity along the slope, which turns you sideways when you cross it at an angle and slows
+	// you going up. Handing it a velocity that already lies in the slope (this upward speed) leaves
+	// nothing to bend. Only ever adds upward speed, and only when you're moving into the slope.
+	inline float SlopeClimbVz(Vec2 a_v, float a_vz, float a_nx, float a_ny, float a_nz, float a_minNz)
+	{
+		if (a_nz < a_minNz || a_nz >= 0.9995f) {
+			return a_vz;  // too steep to walk on, or flat
+		}
+		const float d = a_v.x * a_nx + a_v.y * a_ny + a_vz * a_nz;
+		return d < 0.0f ? a_vz - d / a_nz : a_vz;
+	}
+
 	inline CollideResult Collide(const CollideInput& a_in)
 	{
 		CollideResult r;
