@@ -464,7 +464,7 @@ namespace
 
 			// third person: step when the animation puts a foot down, not on Half-Life's timer
 			bool animStep = false;
-			if (g_cfg.thirdPersonSteps == 1 && !g_firstPerson.load() && g_footstepHooked && g_cfg.muteVanillaFootsteps) {
+			if (!g_firstPerson.load() && g_footstepHooked && g_cfg.muteVanillaFootsteps) {
 				animStep = g_animStep.exchange(false);
 				if (!a_onGround || hSpeed < 1.0f) {
 					g_step.noAnim = 0.0f;

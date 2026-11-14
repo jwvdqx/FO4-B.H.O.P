@@ -811,22 +811,9 @@
           "id": "bMuteVanillaPlayerFootsteps:Sounds",
           "text": "Mute vanilla player footsteps",
           "type": "switcher",
-          "help": "Only the player's. NPC footsteps are never touched.",
+          "help": "Only the player's. NPC footsteps are never touched. In third person the Half-Life step then plays exactly when your character's foot comes down, whatever walking animations you use.",
           "valueOptions": {
             "sourceType": "ModSettingBool"
-          }
-        },
-        {
-          "id": "iThirdPersonSteps:Sounds",
-          "text": "Third person steps",
-          "type": "dropdown",
-          "help": "Follow animation: in third person the Half-Life step plays when your character's foot comes down, so it matches any walking animation (needs Mute vanilla player footsteps). Half-Life timing: steps on Half-Life's own timer, as in first person.",
-          "valueOptions": {
-            "options": [
-              "Half-Life timing",
-              "Follow animation"
-            ],
-            "sourceType": "ModSettingInt"
           }
         },
         {

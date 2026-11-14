@@ -99,9 +99,11 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 - **Sounds by surface**: each surface (wood, grass, metal, water, Power Armor...) can use Half-Life 1's or
   Half-Life 2's sounds, whatever the main sound set. Example: HL1 mode with HL2's wood steps (HL1 has none).
   Step timing and volume still follow the main sound set.
-- **Third person**: the Half-Life step plays when your character's foot actually comes down (the animation's
-  own footstep events), so steps match any walking animation or animation mod. Animations without footstep
-  events fall back to Half-Life's timing. First person keeps Half-Life's timing.
+- **Third person**: whenever the mod is active (no option), the Half-Life step plays when your character's
+  foot actually comes down (the animation's own footstep events), so steps match any walking animation or
+  animation mod, and follow the animation as it speeds up or slows down with you. Animations without
+  footstep events fall back to Half-Life's timing. First person keeps Half-Life's timing. Needs **Mute
+  vanilla player footsteps** on (the default).
 
 ## Perks
 

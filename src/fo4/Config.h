@@ -120,7 +120,6 @@ namespace
 		int   soundSet{ 0 };  // 0 = follow iMode, 1 = Half-Life 1, 2 = Half-Life 2
 		int   surfaceSet[17]{};  // per surface (kSurfaces): 0 = the sound set above, 1 = Half-Life 1, 2 = Half-Life 2
 		bool  muteVanillaFootsteps{ true };
-		int   thirdPersonSteps{ 1 };  // third person: 0 = Half-Life's step timing, 1 = steps follow the walking animation
 		bool  jumpLandSounds{ true };
 		bool  waterSounds{ true };
 		bool  swimSounds{ true };
@@ -313,8 +312,6 @@ namespace
 						g_cfg.crouchJumpKey = std::clamp(std::stoi(val), 0, 1);
 					} else if (key == "iPerkMessages") {
 						g_cfg.perkMessages = std::clamp(std::stoi(val), 0, 2);
-					} else if (key == "iThirdPersonSteps") {
-						g_cfg.thirdPersonSteps = std::clamp(std::stoi(val), 0, 1);
 					}
 					if (key == "iCrouchJumpHeight") {
 						g_cfg.crouchJumpHeight = std::clamp(std::stoi(val), 0, 1);
@@ -492,7 +489,6 @@ namespace
 			c.powerArmorAccelMult = 1.0f;
 			c.powerArmorFrictionMult = 1.0f;
 			c.hlPowerArmorSpeedMult = 1.0f;
-			c.thirdPersonSteps = 0;
 			c.slopeAngle = 45.57f;  // floor normal z 0.7, as in both games
 			c.falloutCamera = 2;    // no camera movement that isn't Half-Life's
 			c.viewBob = 1;
@@ -512,7 +508,6 @@ namespace
 			c.crouchJumpKey = 1;
 			c.crouchJumpHeight = 1;
 			c.perkMode = 1;
-			c.thirdPersonSteps = 1;
 			c.viewBob = 0;
 			c.viewRoll = 2;
 			c.rollAngle = 1.5f;
