@@ -392,7 +392,7 @@ namespace
 	// Third person: Fallout plays your walk/run animation for the speed IT wants you to move at. With
 	// Half-Life speeds, momentum or slippery ground you really move faster or slower, and the feet slide.
 	// The animation is sped up or slowed down by the same ratio through the game's own animation speed
-	// value (AnimationMult), as a temporary change that is taken off before every save, in menus, in first
+	// value (AnimationMult), as a temporary change that is taken off before every save, in first
 	// person and when the option or the mod is off.
 	// ---------------------------------------------------------------------
 	namespace AnimSpeed
