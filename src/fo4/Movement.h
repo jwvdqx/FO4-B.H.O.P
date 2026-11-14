@@ -38,6 +38,7 @@ namespace
 		float         water{ 0.0f };
 		long long     lastPrint{ 0 };
 		int           firstCalls{ 0 };
+		int           landLogs{ 0 };
 	} g_stats;
 
 	hlmath::Vec2 SimVel() { return { g_sim.vx, g_sim.vy }; }
@@ -187,6 +188,9 @@ namespace
 			case MoveClass::kSneak: speed = run * 0.3333f; break;
 			default: speed = run; break;
 			}
+			if (g_cfg.baseSpeedCap > 0.0f) {
+				speed = std::min(speed, g_cfg.baseSpeedCap);  // the cap is on the base speed: buffs, Power Armor and perks apply after it
+			}
 			speed *= g_speedMult.load();
 			if (g_inPowerArmor.load()) {
 				speed *= g_cfg.hlPowerArmorSpeedMult;
@@ -205,6 +209,9 @@ namespace
 					g_input.warned[pa][c] = true;
 					REX::WARN("Fallout's movement data says {:.0f} but it actually moves you at {:.0f} (HL u/s, class {}): using what it does", data, base, c);
 				}
+			}
+			if (g_cfg.baseSpeedCap > 0.0f) {
+				base = std::min(base, g_cfg.baseSpeedCap);  // buffs and perks apply after the cap
 			}
 			speed = base * g_speedMult.load();
 		}
@@ -343,39 +350,132 @@ namespace
 		SetSimVel(after);
 	}
 
-	std::atomic<long long> g_autoJumpUntil{ 0 };  // auto-jump: re-jump if jump is held until this time (ms)
-	std::atomic<long long> g_jumpHeldMs{ 0 };     // last time the jump key was seen held (ms), 0 = released
+	std::atomic<long long> g_autoJumpUntil{ 0 };  // a jump is wanted right after landing, until this time (ms)
+	std::atomic<long long> g_jumpHeldMs{ 0 };     // last time the jump button was seen down (ms)
+	std::atomic<long long> g_jumpPressedMs{ 0 };  // a fresh press of jump nothing has used yet (ms), 0 = none
+	std::atomic_bool       g_jumpDown{ false };   // jump button is down (press seen, no release yet)
+	std::atomic_bool       g_jumpHeldSeen{ false };  // this press has sent "still held" events
 
+	// Is jump being held? Keyboards and gamepads send a "still held" event every frame; if a device only
+	// sends the press and the release, the press counts until the release (5 s at most, in case a menu
+	// swallowed the release).
 	bool JumpHeld()
 	{
-		const long long t = g_jumpHeldMs.load();
-		return t != 0 && NowMs() - t < 250;
+		if (!g_jumpDown.load()) {
+			return false;
+		}
+		const long long age = NowMs() - g_jumpHeldMs.load();
+		return g_jumpHeldSeen.load() ? age < 250 : age < 5000;
 	}
 
-	// Auto-jump: the game only jumps when the jump key is freshly pressed. While you hold it, the jump
-	// handler keeps getting "held" events; right after a landing we hand it one as a fresh press.
+	// Jumps the game wouldn't do by itself. Fallout only jumps on a fresh press of jump while you stand on
+	// the ground, so right after a landing we hand its jump handler a fresh press:
+	//  - auto-jump: you're holding jump (keyboard or gamepad)
+	//  - jump buffer: you pressed jump a moment before landing
+	// While the button is held, the next "still held" event is turned into the press. If none is coming
+	// (button already released, or a device that doesn't send them), the last press we saw is replayed.
 	namespace AutoJump
 	{
 		using OnButton_t = void (*)(void*, const RE::ButtonEvent*);
 		OnButton_t g_orig{ nullptr };
 		int        g_logs{ 0 };
+		int        g_deviceLogs{ 0 };
+		// main thread only: the last press seen, to replay
+		void*                 g_handler{ nullptr };
+		alignas(16) std::byte g_last[sizeof(RE::ButtonEvent)]{};
+		bool                  g_hasLast{ false };
 
 		void Hooked(void* a_this, const RE::ButtonEvent* a_event)
 		{
 			if (a_event) {
-				g_jumpHeldMs = a_event->QPressed() ? NowMs() : 0;  // swimming up / water surfing need to know you hold jump
+				const bool      pressed = a_event->QPressed();
+				const bool      fresh = pressed && a_event->QHeldDownSecs() <= 0.0f;
+				const long long now = NowMs();
+				g_jumpHeldMs = now;
+				g_jumpDown = pressed;
+				if (fresh) {
+					g_jumpPressedMs = now;  // the movement code may use it: ledge jump, crouch-jump, jump buffer
+					g_jumpHeldSeen = false;
+					if (g_cfg.debugLog && g_deviceLogs < 6) {
+						++g_deviceLogs;
+						REX::INFO("jump pressed on device {} (0 keyboard, 1 mouse, 2 gamepad)", static_cast<int>(a_event->device.get()));
+					}
+				} else if (pressed) {
+					g_jumpHeldSeen = true;
+				}
+				if (pressed) {
+					std::memcpy(g_last, a_event, sizeof(RE::ButtonEvent));
+					g_handler = a_this;
+					g_hasLast = true;
+				}
 			}
 			if (a_event && a_event->QPressed() && a_event->QHeldDownSecs() > 0.0f && NowMs() < g_autoJumpUntil.load()) {
 				g_autoJumpUntil = 0;
 				alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
 				std::memcpy(buf, a_event, sizeof(RE::ButtonEvent));
 				reinterpret_cast<RE::ButtonEvent*>(buf)->heldDownSecs = 0.0f;  // looks like a fresh press
-				if (g_cfg.debugLog && g_logs++ < 5) {
-					REX::INFO("auto-jump");
+				if (g_cfg.debugLog && g_logs++ < 10) {
+					REX::INFO("auto-jump (held button, device {})", static_cast<int>(a_event->device.get()));
 				}
 				return g_orig(a_this, reinterpret_cast<const RE::ButtonEvent*>(buf));
 			}
 			g_orig(a_this, a_event);
+		}
+
+		// main thread, the frame after a landing that wants a jump
+		void Fire()
+		{
+			const long long until = g_autoJumpUntil.load();
+			const long long now = NowMs();
+			if (until == 0 || now > until || !g_orig || !g_hasLast || !g_handler) {
+				return;  // the held button already did it, or it's too late
+			}
+			if (g_jumpDown.load() && g_jumpHeldSeen.load() && now - g_jumpHeldMs.load() < 50) {
+				return;  // "still held" events are coming in: the next one becomes the press
+			}
+			g_autoJumpUntil = 0;
+			alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
+			std::memcpy(buf, g_last, sizeof(RE::ButtonEvent));
+			auto ev = reinterpret_cast<RE::ButtonEvent*>(buf);
+			ev->heldDownSecs = 0.0f;
+			ev->value = 1.0f;
+			ev->next = nullptr;
+			if (g_cfg.debugLog && g_logs++ < 10) {
+				REX::INFO("auto-jump (replayed press, device {})", static_cast<int>(ev->device.get()));
+			}
+			g_orig(g_handler, ev);
+		}
+
+		// Ledge jump (main thread): Fallout only refuses the jump because its physics says "in the air". For the
+		// length of this one call it reads "on the ground", so Fallout does the jump itself, animation included.
+		// If Fallout looks at something else and still refuses, there is no jump (the debug log says so).
+		void LedgeFire()
+		{
+			auto con = PlayerController();
+			if (!con || !g_orig || !g_hasLast || !g_handler) {
+				return;
+			}
+			alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
+			std::memcpy(buf, g_last, sizeof(RE::ButtonEvent));
+			auto ev = reinterpret_cast<RE::ButtonEvent*>(buf);
+			ev->heldDownSecs = 0.0f;
+			ev->value = 1.0f;
+			ev->next = nullptr;
+			const auto was = con->context.m_currentState;
+			con->context.m_currentState = RE::hknpCharacterState::hknpCharacterStateType::kOnGround;
+			g_orig(g_handler, ev);
+			if (con->context.m_currentState == RE::hknpCharacterState::hknpCharacterStateType::kOnGround) {
+				con->context.m_currentState = was;  // unless Fallout moved it on (to "jumping")
+			}
+		}
+
+		// physics thread: you just landed and a jump is wanted
+		void Request()
+		{
+			g_autoJumpUntil = NowMs() + 150;
+			if (auto task = F4SE::GetTaskInterface()) {
+				task->AddTask([]() { Fire(); });
+			}
 		}
 
 		void Install()
@@ -405,11 +505,18 @@ namespace
 	std::atomic<long long> g_crouchPressedMs{ 0 };  // when the sneak key was last pressed (ms)
 	std::atomic_bool       g_landSneak{ false };     // land sneaking after a crouch-jump
 	std::atomic_bool       g_crouchWasSneaking{ false };
+	std::atomic<long long> g_sneakWatchUntil{ 0 };   // a crouch-jump landed you in sneak: watch that you can stand up (ms)
+	std::atomic<long long> g_standAskedMs{ 0 };      // you pressed sneak to stand up at this time (ms), 0 = not waiting
 
 	namespace CrouchKey
 	{
 		using OnButton_t = void (*)(void*, const RE::ButtonEvent*);
 		OnButton_t g_orig{ nullptr };
+
+		// main thread only: the last press seen, to replay
+		void*                 g_handler{ nullptr };
+		alignas(16) std::byte g_last[sizeof(RE::ButtonEvent)]{};
+		bool                  g_hasLast{ false };
 
 		void Hooked(void* a_this, const RE::ButtonEvent* a_event)
 		{
@@ -417,8 +524,53 @@ namespace
 				auto p = RE::PlayerCharacter::GetSingleton();
 				g_crouchWasSneaking = p && p->IsSneaking();  // before Fallout toggles it
 				g_crouchPressedMs = NowMs();                 // the movement code decides if it's a crouch-jump
+				if (g_crouchWasSneaking.load() && NowMs() < g_sneakWatchUntil.load()) {
+					g_standAskedMs = NowMs();  // standing up after a crouch-jump: checked a moment later (StandCheck)
+				}
+				std::memcpy(g_last, a_event, sizeof(RE::ButtonEvent));
+				g_handler = a_this;
+				g_hasLast = true;
 			}
 			g_orig(a_this, a_event);  // Fallout still gets the key as normal
+		}
+
+		// Safety net (main thread): you pressed sneak to stand up after a crouch-jump and, almost half a second
+		// later, Fallout still has you sneaking. Its sneak state got out of step; stand you up.
+		void StandCheck()
+		{
+			auto p = RE::PlayerCharacter::GetSingleton();
+			if (!p || !p->IsSneaking()) {
+				g_sneakWatchUntil = 0;  // you stood up fine
+				return;
+			}
+			p->SetSneaking(false);
+			g_sneakWatchUntil = NowMs() + 30000;  // keep watching until a press stands you up by itself
+			REX::WARN("crouch-jump: the sneak key didn't stand you up; stood you up (still sneaking now: {})", p->IsSneaking());
+		}
+
+		// Land sneaking after a crouch-jump (main thread). Fallout is asked the same way the sneak key asks it,
+		// by replaying your press, so its own sneak on/off stays in step and the next press stands you up.
+		// (Setting the sneaking state directly could leave you stuck sneaking.)
+		void LandSneaking()
+		{
+			auto p = RE::PlayerCharacter::GetSingleton();
+			if (p && p->IsSneaking()) {
+				g_sneakWatchUntil = NowMs() + 30000;  // Fallout took the press in the air: still watch the stand-up
+			}
+			if (!p || p->IsSneaking() || !g_orig || !g_hasLast || !g_handler) {
+				return;  // already sneaking, or nothing to replay
+			}
+			alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
+			std::memcpy(buf, g_last, sizeof(RE::ButtonEvent));
+			auto ev = reinterpret_cast<RE::ButtonEvent*>(buf);
+			ev->heldDownSecs = 0.0f;
+			ev->value = 1.0f;
+			ev->next = nullptr;
+			g_orig(g_handler, ev);
+			g_sneakWatchUntil = NowMs() + 30000;
+			if (g_cfg.debugLog) {
+				REX::INFO("crouch-jump: landed, sneak asked through the sneak key (sneaking now: {})", p->IsSneaking());
+			}
 		}
 
 		void Install()
@@ -483,13 +635,25 @@ namespace
 		bool  vzOn{ false };         // we're in charge of your vertical speed
 		float vz{ 0.0f };            // our vertical speed (m/s)
 		bool  hlJump{ false };       // this jump used Half-Life physics (don't learn Fallout's jump from it)
+		long long ledgeTryUntil{ 0 }; // a ledge jump Fallout was asked to do itself: wait for it until this time (ms)
 	} g_air;
+
+	float FalloutJumpHeightHL()
+	{
+		const float h = g_falloutJumpHL.load();
+		return h > 0.0f ? h : g_air.jumpHeightHL;
+	}
 
 	// A fresh crouch press in the air that should become a crouch-jump? Returns the lift in metres (0 = no).
 	float CrouchJumpLift(float a_vz, float a_gravity)
 	{
-		const bool pressed = NowMs() - g_crouchPressedMs.load() < 120;
-		if (!pressed || g_air.crouchJumped || g_crouchWasSneaking.load() || g_air.airTime <= 0.05f) {
+		const long long now = NowMs();
+		const bool      sneakPress = now - g_crouchPressedMs.load() < 120 && !g_crouchWasSneaking.load();
+		// easier on a gamepad: jump pressed again while you're still going up
+		const long long jp = g_jumpPressedMs.load();
+		const bool      jumpPress = g_cfg.crouchJumpKey == 1 && jp != 0 && now - jp < 120 && g_air.jumpedThisAir && a_vz > 0.0f &&
+		                            !g_inPowerArmor.load();
+		if ((!sneakPress && !jumpPress) || g_air.crouchJumped || g_air.airTime <= 0.05f) {
 			return 0.0f;
 		}
 		const float window = a_gravity * g_cfg.crouchJumpWindow;  // speed lost in the window after the peak
@@ -502,8 +666,12 @@ namespace
 			liftHL *= g_air.jumpHeightHL / (hl1 ? 45.0f : 21.3f);  // same share of Fallout's own jump
 		}
 		g_air.crouchJumped = true;
-		g_landSneak = true;
-		g_crouchPressedMs = 0;
+		if (sneakPress) {
+			g_landSneak = true;  // Half-Life keeps you ducked; a second press of jump doesn't sneak
+			g_crouchPressedMs = 0;
+		} else {
+			g_jumpPressedMs = 0;
+		}
 		return liftHL * g_cfg.unitScale;
 	}
 
@@ -539,8 +707,8 @@ namespace
 				}
 			}
 			if (g_air.boostMode == 2) {
-				if (a_actualVz < g_air.lastOutVz - g_air.gravity * a_dt - 1.0f) {
-					g_air.boostVz = 0.0f;  // hit a ceiling: stop pushing up
+				if (a_actualVz < g_air.lastOutVz - g_air.gravity * a_dt - 1.0f || a_inVz - g_air.lastInVz > 2.0f) {
+					g_air.boostVz = 0.0f;  // hit a ceiling, or Fallout started a jump/launch of its own: stop pushing up
 				} else {
 					outVz = a_inVz + g_air.boostVz;
 				}
@@ -568,12 +736,6 @@ namespace
 	// Half-Life jumping and gravity (iJumpPhysics 1 or 2). While you're in the air we hand the game our own
 	// vertical speed every step, with Half-Life's gravity (sv_gravity: HL1 800, HL2 600 units/s^2).
 	// Standing on the ground, Fallout is in charge as usual. Returns the vertical speed for this step (m/s).
-	float FalloutJumpHeightHL()
-	{
-		const float h = g_falloutJumpHL.load();
-		return h > 0.0f ? h : g_air.jumpHeightHL;
-	}
-
 	float HLVertical(float a_inVz, bool a_rawGround, bool a_onGround, bool a_jumpedNow, float a_dt)
 	{
 		if (a_rawGround) {
@@ -602,11 +764,15 @@ namespace
 			if (g_air.hasMeasVz && g_air.sentVz > 0.5f && g_air.measVz < g_air.sentVz * 0.8f - 0.3f) {
 				g_air.vz = std::min(g_air.vz, g_air.measVz);
 			}
-			// something launched you (explosion, script): Fallout's own vertical speed jumped up
-			const float expectFallout = g_air.lastInVz - g_air.gravity * a_dt;
-			const float expectOurs = g_air.sentVz - g_air.gravity * a_dt;
-			const float kick = a_inVz - std::max(expectFallout, expectOurs);
-			if (kick > 3.0f) {
+			// Something pushing you up (explosion, script, a Power Armor jetpack): Fallout's own vertical speed
+			// rose more than its gravity allows. Fallout may be carrying on from its own speed or from the one we
+			// handed it, so compare with whichever fits better; anything clearly above that is added to ours.
+			const float dFallout = a_inVz - (g_air.lastInVz - g_air.gravity * a_dt);
+			const float dOurs = a_inVz - (g_air.sentVz - g_air.gravity * a_dt);
+			const float kick = std::fabs(dFallout) < std::fabs(dOurs) ? dFallout : dOurs;
+			// (in the first moment of a jump only a big kick counts, in case Fallout builds its jump up over a few steps)
+			const float least = g_air.airTime > 0.1f ? 6.0f * a_dt + 0.05f : 3.0f;
+			if (kick > least && a_inVz > g_air.lastInVz + 0.02f) {
 				g_air.vz += kick;
 			}
 		}

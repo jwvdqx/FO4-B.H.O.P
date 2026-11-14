@@ -389,6 +389,38 @@ int main()
 		Near(sw.vel.x, 256.0, 0.5, "swim: the plugin's swimming tops out at 80%");
 	}
 
+	// ---- Half-Life slopes: crossing a slope at an angle keeps your heading
+	{
+		// a 30 degree slope rising toward +x; you walk diagonally across it
+		const float nx = -0.5f, ny = 0.0f, nz = 0.8660254f;
+		const Vec2  v{ 200.0f, 200.0f };
+		const Vec2  bent = hlcore::AlongGround(v, 0.0f, nx, ny, nz);
+		Check(std::fabs(bent.x - v.x) > 20.0f, "slope: a level velocity gets bent sideways by the game", bent.x, 150.0);
+		const float vz = hlcore::SlopeClimbVz(v, 0.0f, nx, ny, nz, 0.7f);
+		const Vec2  kept = hlcore::AlongGround(v, vz, nx, ny, nz);
+		Near(kept.x, 200.0, 0.01, "slope: with the climb speed your heading is kept (x)");
+		Near(kept.y, 200.0, 0.01, "slope: with the climb speed your heading is kept (y)");
+		Near(vz, 200.0 * 0.5 / 0.8660254, 0.01, "slope: climb speed = rise of the slope under your path");
+		Near(hlcore::SlopeClimbVz({ -200.0f, 0.0f }, 0.0f, nx, ny, nz, 0.7f), 0.0, 0.001, "slope: going down adds nothing");
+		Near(hlcore::SlopeClimbVz(v, 0.0f, -0.8f, 0.0f, 0.6f, 0.7f), 0.0, 0.001, "slope: too steep to walk on is left to the game");
+	}
+
+	// ---- jump speed: the takeoff speed for a height really reaches that height
+	{
+		const float g = 13.24f, h = 43.0f * 0.0254f;  // Fallout's gravity (m/s2), its jump height (43 HL units in metres)
+		float       vz = hlcore::JumpSpeed(g, h), z = 0.0f, peak = 0.0f;
+		for (int i = 0; i < 2000 && (vz > 0.0f || z > 0.0f); ++i) {
+			z += hlcore::GravityStep(vz, g, 0.001f) * 0.001f;
+			peak = std::max(peak, z);
+		}
+		Near(peak, h, 0.002, "jump speed: takeoff speed reaches the height asked for");
+		// Half-Life numbers used by the Full Half-Life profiles: 45 units at 800, 21 at 600
+		Near(hlcore::JumpSpeed(800.0f, 45.0f), 268.33, 0.01, "HL1 jump: 268.3 units/s takeoff");
+		Near(hlcore::JumpSpeed(600.0f, 21.0f), 158.75, 0.01, "HL2 jump: 158.7 units/s takeoff");
+		// slope limit: 45.57 degrees is Half-Life's floor normal z 0.7
+		Near(std::cos(45.57 * 0.01745329), 0.7, 0.0005, "slope limit: 45.57 degrees = normal z 0.7");
+	}
+
 	std::printf("\n%d failure(s)\n", g_failures);
 	return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

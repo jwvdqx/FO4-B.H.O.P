@@ -33,8 +33,15 @@ namespace
 		g_air = AirState{};
 		g_input = InputState{};
 		g_autoJumpUntil = 0;
+		g_jumpPressedMs = 0;
+		g_jumpDown = false;
+		AnimSpeed::g_applied = 0.0f;  // saves never hold our animation speed change (taken off before saving)
+		AnimSpeed::g_smooth = 1.0f;
+		Perks::g_baseline = false;  // the perk line shows again for this save
 		g_crouchPressedMs = 0;
 		g_landSneak = false;
+		g_sneakWatchUntil = 0;
+		g_standAskedMs = 0;
 		g_edgeAhead = false;
 		g_stats = Stats{};
 		Sounds::g_water = Sounds::WaterState{};
@@ -59,6 +66,7 @@ namespace
 		}
 		Perks::Resolve();
 		Sounds::InstallFootstepHook();
+		AnimSpeed::Clear();  // comes back by itself within a moment if it's still wanted
 	}
 
 	class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
@@ -84,6 +92,9 @@ namespace
 			if (auto ui = RE::UI::GetSingleton()) {
 				ui->RegisterSink<RE::MenuOpenCloseEvent>(&g_menuSink);
 			}
+			break;
+		case F4SE::MessagingInterface::kPreSaveGame:
+			AnimSpeed::Clear();  // never saved into your save file
 			break;
 		case F4SE::MessagingInterface::kPostLoadGame:
 		case F4SE::MessagingInterface::kNewGame:

@@ -29,14 +29,17 @@ namespace
 
 	struct Config
 	{
+		bool enabled{ true };         // master switch: off = plain Fallout, nothing of the mod runs
+		int  profile{ 0 };            // 0 = your own settings, 1 = full Half-Life 1, 2 = full Half-Life 2, 3 = Claude's choice
 		Mode mode{ Mode::kHL2 };
 		bool debugLog{ false };
 		bool enableInPowerArmor{ true };
 		bool wallClip{ true };
-		bool wallProbe{ true };
+		float slopeAngle{ 45.0f };    // Half-Life slopes: up to this steep you keep your heading and speed (degrees, 0 = off)
+		bool wallProbe{ true };       // check the real wall surface to fine-tune the wall direction (experiment)
 		int  swimMode{ 1 };           // 0 = Fallout swimming, 1 = Half-Life swimming (flat; Fallout keeps floating and diving)
 		bool waterSurf{ true };       // hold jump at the surface while fast: skim along the water like Half-Life
-		bool sprintSound{ true };     // HL2 suit sound when you start sprinting       // check the real wall surface to fine-tune the wall direction (experiment)
+		bool sprintSound{ true };     // HL2 suit sound when you start sprinting
 		int  jumpPhysics{ 0 };        // 0 = Fallout jump and gravity, 1 = HL gravity with Fallout's jump height, 2 = exact HL
 		bool record{ false };         // write a movement recording after closing the pause menu
 		float recordSeconds{ 15.0f };
@@ -50,6 +53,7 @@ namespace
 		float rollAngle{ 2.0f };
 		float rollSpeed{ 200.0f };
 		bool  landingPunch{ true };
+		int   falloutCamera{ 1 };  // Fallout's own first person camera movement: 0 = keep, 1 = off while jumping and landing, 2 = always off
 		float punchScale{ 1.0f };
 
 		// negative = use the mode's default
@@ -72,6 +76,7 @@ namespace
 		int   hl1Sprint{ 0 };        // HL1 speeds: 0 = sprint key does nothing, 1 = sprint is faster
 		float hl1SprintMult{ 1.35f };
 		float hlPowerArmorSpeedMult{ 0.85f };
+		float baseSpeedCap{ 0.0f };  // HL units/s: your base speed never goes above this (0 = no cap); buffs and perks apply after
 
 		// ---- air + bunnyhop
 		bool  airControl{ true };
@@ -86,6 +91,9 @@ namespace
 		int   crouchJumpHeight{ 0 };   // 0 = exact per game (HL1 18, HL2 36 units), 1 = scaled to Fallout's jump
 		float crouchJumpWindow{ 0.15f };  // seconds after the top of the jump it still works
 		bool  crouchLandSneak{ true };  // land sneaking after a crouch-jump (Half-Life keeps you ducked)
+		int   crouchJumpKey{ 1 };      // 0 = sneak key only, 1 = sneak key, or jump pressed again on the way up
+		float jumpBuffer{ 0.1f };      // seconds: jump pressed this long before landing still jumps (0 = off)
+		float ledgeJump{ 0.1f };       // seconds after running off a ledge you can still jump (0 = off)
 		int   edgeFriction{ 0 };       // 0 off, 1 HL1 mode only, 2 both modes
 		float edgeFrictionMult{ 2.0f };  // sv_edgefriction
 		float pushThreshold{ 60.0f };  // HL units/s of sudden extra speed that counts as a push
@@ -100,6 +108,7 @@ namespace
 
 		// ---- perks: 0 off, 1 bonus, 2 unlock
 		int   perkMode{ 1 };
+		int   perkMessages{ 2 };  // on-screen notes: 0 off, 1 when you gain a rank, 2 also one line after loading
 		// perk names to look for (lower case, '|' between alternatives) - change for non-English games
 		std::string perkNames[6]{ "moving target", "strong back", "adamantium skeleton", "aquaboy|aquagirl", "sneak", "action boy|action girl" };
 
@@ -237,10 +246,15 @@ namespace
 					} else if (key.rfind("Material.", 0) == 0) {
 						g_cfg.materialOverrides.emplace_back(Lower(key.substr(9)), Lower(val));
 					}
+					B("bEnabled", g_cfg.enabled);
+					if (key == "iProfile") {
+						g_cfg.profile = std::clamp(std::stoi(val), 0, 3);
+					}
 					B("bDebugLog", g_cfg.debugLog);
 					B("bEnableInPowerArmor", g_cfg.enableInPowerArmor);
 					B("bWallClip", g_cfg.wallClip);
 					B("bWallProbe", g_cfg.wallProbe);
+					F("fSlopeAngle", g_cfg.slopeAngle);
 					B("bWaterSurf", g_cfg.waterSurf);
 					B("bSprintSound", g_cfg.sprintSound);
 					if (key == "iSwimMode") {
@@ -261,6 +275,8 @@ namespace
 						g_cfg.smoothing = std::clamp(std::stoi(val), 0, 2);
 					} else if (key == "iViewBob") {
 						g_cfg.viewBob = std::clamp(std::stoi(val), 0, 2);
+					} else if (key == "iFalloutCameraMotion") {
+						g_cfg.falloutCamera = std::clamp(std::stoi(val), 0, 2);
 					} else if (key == "iViewRoll") {
 						g_cfg.viewRoll = std::clamp(std::stoi(val), 0, 2);
 					}
@@ -273,6 +289,7 @@ namespace
 					} else if (key == "iPerkMode") {
 						g_cfg.perkMode = std::clamp(std::stoi(val), 0, 2);
 					}
+					F("fBaseSpeedCap", g_cfg.baseSpeedCap);
 					F("fHL1SprintMult", g_cfg.hl1SprintMult);
 					F("fHLPowerArmorSpeedMult", g_cfg.hlPowerArmorSpeedMult);
 					B("bAirControl", g_cfg.airControl);
@@ -289,6 +306,13 @@ namespace
 					B("bCrouchLandSneak", g_cfg.crouchLandSneak);
 					F("fCrouchJumpWindow", g_cfg.crouchJumpWindow);
 					F("fEdgeFrictionMult", g_cfg.edgeFrictionMult);
+					F("fJumpBuffer", g_cfg.jumpBuffer);
+					F("fLedgeJump", g_cfg.ledgeJump);
+					if (key == "iCrouchJumpKey") {
+						g_cfg.crouchJumpKey = std::clamp(std::stoi(val), 0, 1);
+					} else if (key == "iPerkMessages") {
+						g_cfg.perkMessages = std::clamp(std::stoi(val), 0, 2);
+					}
 					if (key == "iCrouchJumpHeight") {
 						g_cfg.crouchJumpHeight = std::clamp(std::stoi(val), 0, 1);
 					} else if (key == "iEdgeFriction") {
@@ -373,7 +397,7 @@ namespace
 		if (c.tickRate > 0.0f) {
 			F(c.tickRate, 20.0f, 500.0f, 66.67f);
 		}
-		F(c.responsiveness, 0.25f, 4.0f, 1.3f);
+		F(c.responsiveness, 0.25f, 4.0f, 1.0f);
 		F(c.fullLoadAccelMult, 0.05f, 1.0f, 0.8f);
 		F(c.overencumberedAccelMult, 0.05f, 1.0f, 0.6f);
 		F(c.fullLoadFrictionMult, 0.05f, 2.0f, 1.0f);
@@ -381,6 +405,8 @@ namespace
 		F(c.powerArmorFrictionMult, 0.05f, 2.0f, 1.0f);
 		F(c.unitScale, 0.001f, 1.0f, 0.0254f);
 		F(c.hl1SprintMult, 1.0f, 3.0f, 1.35f);
+		F(c.baseSpeedCap, 0.0f, 1000.0f, 0.0f);
+		F(c.slopeAngle, 0.0f, 60.0f, 45.0f);
 		F(c.hlPowerArmorSpeedMult, 0.1f, 2.0f, 0.85f);
 		F(c.airAccelerate, 0.0f, 100.0f, 10.0f);
 		F(c.airCap, 1.0f, 500.0f, 30.0f);
@@ -389,6 +415,8 @@ namespace
 		F(c.pushThreshold, 10.0f, 1000.0f, 60.0f);
 		F(c.recordSeconds, 1.0f, 120.0f, 15.0f);
 		F(c.crouchJumpWindow, 0.0f, 1.0f, 0.15f);
+		F(c.jumpBuffer, 0.0f, 0.3f, 0.1f);
+		F(c.ledgeJump, 0.0f, 0.3f, 0.1f);
 		F(c.edgeFrictionMult, 1.0f, 10.0f, 2.0f);
 		F(c.surfaceStrength, 0.0f, 1.0f, 1.0f);
 		F(c.bobScale, 0.0f, 5.0f, 1.0f);
@@ -411,12 +439,95 @@ namespace
 		c.filePriority = std::min<std::uint32_t>(c.filePriority, 255);
 	}
 
+	// Profiles. Your own settings are whatever MCM saved (MCM\Settings\BHOP.ini): that file is only ever
+	// read here, never written, so picking another profile can't change it. A ready-made profile is laid
+	// over the settings in memory; going back to "My settings" brings yours back exactly as you left them.
+	void ApplyProfile()
+	{
+		const int profile = g_cfg.profile;
+		if (profile == 0) {
+			return;
+		}
+		Config c{};  // the mod's own defaults: nothing of your settings leaks into a ready-made profile...
+		// ...except what isn't about how it plays: the switches themselves, your volume, language and debug options
+		c.enabled = g_cfg.enabled;
+		c.profile = profile;
+		c.debugLog = g_cfg.debugLog;
+		c.record = g_cfg.record;
+		c.recordSeconds = g_cfg.recordSeconds;
+		c.volume = g_cfg.volume;
+		c.muteVanillaFootsteps = g_cfg.muteVanillaFootsteps;
+		c.useVanillaOutput = g_cfg.useVanillaOutput;
+		c.fileSoundFlags = g_cfg.fileSoundFlags;
+		c.filePriority = g_cfg.filePriority;
+		c.materialOverrides = g_cfg.materialOverrides;
+		c.unitScale = g_cfg.unitScale;
+		c.perkMessages = g_cfg.perkMessages;
+		c.enableInPowerArmor = g_cfg.enableInPowerArmor;
+		for (int i = 0; i < 6; ++i) {
+			c.perkNames[i] = g_cfg.perkNames[i];
+		}
+		if (profile == 1 || profile == 2) {
+			// the original game, nothing added: its speeds, its jump, its timing, no helpers, no Fallout extras
+			c.mode = profile == 1 ? Mode::kHL1 : Mode::kHL2;
+			c.soundSet = 0;
+			c.speedMode = 1;
+			c.hl1Sprint = 0;
+			c.jumpPhysics = 2;
+			c.hl2AirFriction = 1;
+			c.strafeAssist = 0.0f;
+			c.bhopGrace = 0.02f;  // the originals give you one frame
+			c.autoJump = 0;
+			c.jumpBuffer = 0.0f;
+			c.ledgeJump = 0.0f;
+			c.crouchJumpKey = 0;
+			c.crouchJumpHeight = 0;
+			c.edgeFriction = 1;  // Half-Life 1 only
+			c.perkMode = 0;
+			c.carryWeight = false;
+			c.surfaceFriction = false;
+			c.powerArmorAccelMult = 1.0f;
+			c.powerArmorFrictionMult = 1.0f;
+			c.hlPowerArmorSpeedMult = 1.0f;
+			c.slopeAngle = 45.57f;  // floor normal z 0.7, as in both games
+			c.falloutCamera = 2;    // no camera movement that isn't Half-Life's
+			c.viewBob = 1;
+			c.viewRoll = 1;
+		} else {
+			// Claude's choice: Half-Life 2's feel, tuned to sit well in Fallout and on a gamepad
+			c.mode = Mode::kHL2;
+			c.soundSet = 0;
+			c.speedMode = 0;         // Fallout's speeds, so fights and perks stay balanced
+			c.jumpPhysics = 0;       // Fallout's jump and fall damage
+			c.hl2AirFriction = 2;
+			c.strafeAssist = 0.6f;
+			c.bhopGrace = 0.08f;
+			c.autoJump = 1;
+			c.jumpBuffer = 0.12f;
+			c.ledgeJump = 0.1f;
+			c.crouchJumpKey = 1;
+			c.crouchJumpHeight = 1;
+			c.perkMode = 1;
+			c.viewBob = 0;
+			c.viewRoll = 2;
+			c.rollAngle = 1.5f;
+		}
+		g_cfg = std::move(c);
+	}
+
 	void LoadConfig()
 	{
 		g_cfg = Config{};  // start from clean defaults, so a removed line doesn't keep an old value
 		const bool defaults = ReadIni("Data/MCM/Config/BHOP/settings.ini");
 		const bool user = ReadIni("Data/MCM/Settings/BHOP.ini");
+		ApplyProfile();
 		ValidateConfig();
+		static constexpr const char* kProfiles[] = { "My settings", "Full Half-Life 1", "Full Half-Life 2", "Claude's choice" };
+		REX::INFO("Mod {} | profile: {}", g_cfg.enabled ? "ON" : "OFF (master switch)", kProfiles[g_cfg.profile]);
+		if (!g_cfg.enabled) {
+			g_cfg.mode = Mode::kVanilla;  // master switch off: plain Fallout movement, camera and sounds
+			g_cfg.sounds = false;
+		}
 		REX::INFO("Settings: defaults {}, MCM changes {}", defaults ? "found" : "MISSING", user ? "found" : "none yet");
 
 		const auto& d = g_cfg.mode == Mode::kHL1 ? kHL1Defaults : kHL2Defaults;

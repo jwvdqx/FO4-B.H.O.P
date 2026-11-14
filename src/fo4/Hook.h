@@ -72,7 +72,24 @@ namespace
 
 		// Stairs and bumps make the game report "in the air" for a moment. Unless you jumped,
 		// short moments like that still count as ground, so you keep full control and friction.
-		const bool jumpedNow = g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f;
+		bool jumpedNow = g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f;
+		// A ledge jump we asked Fallout to do itself (so it plays its jump animation): did it?
+		if (g_air.ledgeTryUntil != 0) {
+			if (rawGround) {
+				g_air.ledgeTryUntil = 0;  // back on the ground: nothing to do
+			} else if (a_vel.z / g_cfg.unitScale > 50.0f) {
+				g_air.ledgeTryUntil = 0;
+				jumpedNow = true;  // Fallout jumped: from here on it's an ordinary jump
+				if (g_cfg.debugLog) {
+					REX::INFO("ledge jump: Fallout did the jump itself (with its animation)");
+				}
+			} else if (NowMs() > g_air.ledgeTryUntil) {
+				g_air.ledgeTryUntil = 0;  // it didn't: no jump (a ledge jump is always Fallout's own, animation included)
+				if (g_cfg.debugLog) {
+					REX::INFO("ledge jump: Fallout didn't jump (too late, or it refused)");
+				}
+			}
+		}
 		g_air.prevRawGround = rawGround;
 		if (rawGround) {
 			g_air.airTime = 0.0f;
@@ -80,6 +97,25 @@ namespace
 			g_air.airTime += dt;
 			if (jumpedNow) {
 				g_air.jumpedThisAir = true;
+			}
+		}
+		if (jumpedNow) {
+			g_jumpPressedMs = 0;  // that press became this jump
+		}
+		// Ledge jump: Fallout only jumps while it says you're on the ground. Pressing jump just after running
+		// off an edge (or in one of those short "in the air" moments on stairs) still jumps.
+		if (!rawGround && !jumpedNow && g_air.ledgeTryUntil == 0 && !g_air.jumpedThisAir && g_cfg.ledgeJump > 0.0f && g_cfg.mode != Mode::kVanilla && !menus &&
+			!g_swimming.load() && !g_inPowerArmor.load() && dt > 0.0f && dt <= 0.25f && g_air.airTime <= g_cfg.ledgeJump &&
+			a_vel.z / g_cfg.unitScale < 50.0f) {
+			const long long press = g_jumpPressedMs.load();
+			if (press != 0 && NowMs() - press < 120) {
+				g_jumpPressedMs = 0;
+				// Ask Fallout to do a real jump (animation, sound events, everything). It shows up within a
+				// frame or two as an ordinary jump; if it hasn't within 70 ms, there's no jump.
+				g_air.ledgeTryUntil = NowMs() + 70;
+				if (auto task = F4SE::GetTaskInterface()) {
+					task->AddTask([]() { AutoJump::LedgeFire(); });
+				}
 			}
 		}
 		const bool onGround = rawGround || (!g_air.jumpedThisAir && g_air.airTime < 0.12f);
@@ -173,17 +209,28 @@ namespace
 		} else {
 			g_air.sinceLanding = std::min(g_air.sinceLanding + dt, 10.0f);
 		}
+		if (landEvent && g_cfg.debugLog && g_stats.landLogs < 30) {
+			++g_stats.landLogs;
+			// to check fall damage with Half-Life gravity: Fallout works it out from these two
+			REX::INFO("landing: fall speed {:.0f} HL u/s | Fallout's fall start height {:.2f}, fall time {:.2f} s", fallSpeed,
+				a_this->fallStartHeight, a_this->fallTime);
+		}
 		if (landEvent && !menus) {
 			Camera::OnLand(fallSpeed);
 			if (g_landSneak.exchange(false) && g_cfg.crouchLandSneak) {
 				if (auto task = F4SE::GetTaskInterface()) {
-					task->AddTask([]() {
-						if (auto p = RE::PlayerCharacter::GetSingleton(); p && !p->IsSneaking()) {
-							p->SetSneaking(true);  // Half-Life keeps you ducked after a duck-jump
-						}
-					});
+					task->AddTask([]() { CrouchKey::LandSneaking(); });  // Half-Life keeps you ducked after a duck-jump
 				}
 			}
+		}
+		if (const long long asked = g_standAskedMs.load(); asked != 0 && NowMs() - asked > 400) {
+			g_standAskedMs = 0;
+			if (auto task = F4SE::GetTaskInterface()) {
+				task->AddTask([]() { CrouchKey::StandCheck(); });
+			}
+		}
+		if (g_swimming.load() || menus) {
+			g_landSneak = false;  // the crouch-jump ended in water or a menu: don't sneak at some later landing
 		}
 		if (rawGround && !g_air.measuring) {
 			g_air.hlJump = false;
@@ -269,9 +316,12 @@ namespace
 			ResetSim(a_vel);
 			g_air.airborneSim = false;
 			g_stats.outSpeed = std::hypot(a_vel.x, a_vel.y) / g_cfg.unitScale;
+			AnimSpeed::g_wanted = 1.0f;
 			RE::hkVector4f pass = a_vel;
 			if (g_air.vzOn) {
 				pass.z = hlVz;
+			} else if (!skip) {
+				pass.z = CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);  // crouch-jump works without air control too
 			}
 			g_air.sentVz = pass.z;
 			PrintStats();
@@ -470,8 +520,16 @@ namespace
 				const float perkBonus = Perks::Bonus() ? 0.025f * static_cast<float>(Perks::Rank(Perks::kActionBoy)) : 0.0f;
 				g_air.grace = g_cfg.bhopGrace + perkBonus;
 				const bool autoJump = g_cfg.autoJump == 2 || (g_cfg.autoJump == 1 && Perks::Bonus() && Perks::MaxRank(Perks::kActionBoy));
-				if (autoJump) {
-					g_autoJumpUntil = NowMs() + 150;  // the jump key handler re-jumps if you're holding jump
+				if (autoJump && JumpHeld()) {
+					AutoJump::Request();  // holding jump (keyboard or gamepad): jump again right away
+				}
+			}
+			if (landEvent && g_cfg.jumpBuffer > 0.0f) {
+				// jump buffer: jump pressed a moment before landing still counts
+				const long long press = g_jumpPressedMs.load();
+				if (press != 0 && NowMs() - press <= static_cast<long long>(g_cfg.jumpBuffer * 1000.0f)) {
+					g_jumpPressedMs = 0;
+					AutoJump::Request();
 				}
 			}
 			const float surface = SurfaceFrictionFor(a_this->supportMaterial, waterDepth);
@@ -511,6 +569,8 @@ namespace
 		g_air.grace = st.grace;
 
 		const float outX = outV.x, outY = outV.y;
+		// third person: how fast you really move compared with what Fallout's animation is playing for
+		AnimSpeed::g_wanted = onGround && !swimHL && vanillaSpeed > 40.0f && wish.mag > 0.2f ? outV.Length() / vanillaSpeed : 1.0f;
 		g_air.lastOut = outV;
 		g_air.hasLastOut = true;
 
@@ -518,6 +578,11 @@ namespace
 		out.x = outX * g_cfg.unitScale;
 		out.y = outY * g_cfg.unitScale;
 		out.z = swimHL ? a_vel.z : g_air.vzOn ? hlVz : CrouchJumpVertical(a_vel.z, actual.z, rawGround, dt);
+		if (rawGround && hasGround && !swimHL && g_cfg.slopeAngle > 0.0f) {
+			// Half-Life slopes: climb without being turned or slowed (see SlopeClimbVz)
+			const float minNz = std::cos(g_cfg.slopeAngle * 0.01745329f);
+			out.z = hlcore::SlopeClimbVz(outV, out.z / g_cfg.unitScale, gnx, gny, gnz, minNz) * g_cfg.unitScale;
+		}
 		g_air.sentVz = out.z;
 		{
 			const float sp = std::hypot(outX, outY);

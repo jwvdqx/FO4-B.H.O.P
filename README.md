@@ -1,7 +1,21 @@
-# B.H.O.P. - Boston Hopping Overhaul Project (v1.5.0)
+# B.H.O.P. - Boston Hopping Overhaul Project (v1.6.0)
 
 Half-Life 1 and 2 player movement, camera and sounds for Fallout 4 (runtime 1.11.240, F4SE 0.7.9).
 Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes apply when you close the menu.
+
+## Master switch and profiles
+
+- **B.H.O.P. enabled** (top of the General page): off = plain Fallout 4. Your settings are kept.
+- **Profile**:
+  - **My settings**: everything you set in the menu, saved as you change it.
+  - **Full Half-Life 1** / **Full Half-Life 2**: the original game with nothing added: its speeds, its jump
+    and gravity, exact timing, no stick helpers, no jump buffer, no perks, no weight or surface effects.
+  - **Claude's choice**: Half-Life 2's feel tuned for Fallout and gamepads (Fallout's speeds and jump,
+    stronger strafe assist, jump buffer, ledge jump, perks as bonuses).
+
+  The three ready-made profiles are laid over your settings in memory only. They never write to your
+  settings file, so **My settings** always brings back exactly what you had. While a ready-made profile is
+  on, the menu still shows (and saves) your own values; they're used again when you switch back.
 
 ## Movement
 
@@ -22,6 +36,10 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   you slid, so sliding along a wall keeps your forward speed. Optional wall probe (on by default, an
   experiment): rays check the real wall surface to get its exact direction.
 - Slopes use the floor direction the game reports, so going up or across a slope never counts as a wall.
+- **Half-Life slopes**: on slopes up to 45 degrees (adjustable) you keep your heading and your speed and just
+  climb, as in both Half-Life games, instead of being turned sideways and slowed when you cross one at an angle.
+- **Base speed cap** (optional): your base walk/run/sprint speed never goes above the value you set; buffs,
+  chems, Power Armor and perks apply after the cap.
 - Stairs and clutter: when the game is stepping you up or down, being slowed or bent for a moment isn't
   treated as a wall, so you go up and over instead of being stopped or shoved sideways.
 - Pushes (hits, explosions, scripts) add to your momentum, Half-Life style. Scripted walks and anything
@@ -36,11 +54,19 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 - Bunnyhop: jump again within 0.05 s of landing (original games: one frame) and friction doesn't slow you.
   Action Boy/Girl widens the window; at max rank, hold jump to bunnyhop automatically (auto-jump can also be
   set to always or off). HL1's bunnyhop cap and HL2's jump boost (with its ABH quirk) are included.
+- Auto-jump works with any device: holding the button is tracked from its press and release, and if the
+  game sends no "still held" events the press is replayed on landing.
+- **Jump buffer** (0.1 s by default): jump pressed a moment before landing jumps as you touch down.
+- **Ledge jump** (0.1 s by default): you can still jump just after running off an edge, and jumps pressed
+  during the short "in the air" moments on stairs are no longer lost. Not in Power Armor. It is always
+  Fallout's own jump, so its jump animation plays; press too late and there is no jump. The debug log says
+  whether Fallout took it.
 
 - Crouch-jump: press sneak in the air (while rising or just after the top) to lift your feet like Half-Life's
   duck-jump: HL1 +18 units, HL2 +36 units, or scaled to Fallout's own jump. You land sneaking, like HL keeps
   you ducked. Fallout can't shrink your body mid-air, so this is an upward boost giving the same extra height;
-  normal physics still stops you at ceilings.
+  normal physics still stops you at ceilings. By default, pressing **jump again while still going up** does
+  the same without landing you in sneak (easier on a gamepad; not in Power Armor).
 - **Swimming** (Half-Life by default): swim speed (80% of running), momentum and water friction like
   Half-Life, so you keep your speed when you land in water and the water slows you. Fallout still handles
   floating and diving.
@@ -51,11 +77,16 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   so you stop at ledges. Checked with three rays across your width, 16 units ahead and 34 down, like HL1.
 - **Jumping and gravity** (optional, off by default): Half-Life gravity with Fallout's jump height (same
   height, quicker jump), or exact Half-Life (HL1 jumps 45 units, HL2 21). The mod then handles your vertical
-  speed in the air; ceilings and launches (explosions) are followed. Fall damage may change: test it.
+  speed in the air; ceilings, launches (explosions) and steady upward pushes (Power Armor jetpack) are
+  followed. Fall damage is still Fallout's own; it has not been confirmed in-game that it is unchanged, so
+  the debug log prints Fallout's fall height and time on every landing to check.
 
 ## Camera (first person)
 
 - Half-Life 1 view bob, strafe roll and landing tilt. "Like the game" = on in HL1 mode, off in HL2 mode.
+  **Fallout's camera shake**: Fallout's own first person camera movement (the dip and shake when you jump and
+  land, which comes from its animations) is switched off while jumping and landing, or always. Fallout's
+  own setting is put back when the mod is off.
   The bob is Half-Life's real size (before v1.4 it was a third of it; lower **Bob strength** if you liked that).
 
 ## Sounds
@@ -68,6 +99,11 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 - **Sounds by surface**: each surface (wood, grass, metal, water, Power Armor...) can use Half-Life 1's or
   Half-Life 2's sounds, whatever the main sound set. Example: HL1 mode with HL2's wood steps (HL1 has none).
   Step timing and volume still follow the main sound set.
+- **Third person**: whenever the mod is active (no option), the Half-Life step plays when your character's
+  foot actually comes down (the animation's own footstep events), so steps match any walking animation or
+  animation mod, and follow the animation as it speeds up or slows down with you. Animations without
+  footstep events fall back to Half-Life's timing. First person keeps Half-Life's timing. Needs **Mute
+  vanilla player footsteps** on (the default).
 
 ## Perks
 
@@ -75,6 +111,12 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   softer landing tilt, Aquaboy/Aquagirl = no water drag, Sneak = quieter steps, Agility = better air control,
   Action Boy/Girl = wider bunnyhop window and auto-jump at max rank.
 - Unlock mode: air control needs Agility 5, bunnyhop needs Moving Target 1, ABH needs Moving Target 3.
+- Perks are found by their form ID first (Moving Target, Strong Back, Adamantium Skeleton, Action Boy), with
+  later ranks taken from each perk's own "next rank" link, then by name. So they work in any language and
+  with mods that rename the vanilla perks or change their ranks. Aquaboy and Sneak are found by name; for
+  other languages or perks a mod replaced, put names or form IDs (`0x0004D869`) in the settings file.
+- **On-screen notes**: one line after loading lists the perks in use (`B.H.O.P. perks: Action Boy 2/3`), and
+  a note appears when a new rank gives you something. Can be turned off.
 
 ## Install
 
@@ -113,7 +155,11 @@ chain with other plugins that changed the same functions. Problems are written t
 
 - Wall and push detection compare how far you really moved with what the mod asked for; the game gives no
   wall direction, so it's worked out from your motion (and the optional wall probe).
-- Perks are found by name (English by default; change the names in the settings file for other languages).
+- Aquaboy and Sneak are found by name (English by default; change the names in the settings file).
+- Third person: the walk/run animation is sped up or slowed down to match your real speed whenever the mod
+  is active (no option). It can't help when you slide with no input (Fallout plays the standing animation),
+  and it changes every animation played while moving, not only the legs (reloading while running fast is
+  faster too). It is removed before every save.
 - Water surfing doesn't bob you in and out of the water like Half-Life (Fallout holds you at the surface);
   your speed behaves the same way (worked out from Half-Life's bobbing and checked in the tests).
 - Swimming is flat: Fallout keeps floating and diving.
