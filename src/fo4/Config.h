@@ -53,6 +53,7 @@ namespace
 		float rollAngle{ 2.0f };
 		float rollSpeed{ 200.0f };
 		bool  landingPunch{ true };
+		int   falloutCamera{ 1 };  // Fallout's own first person camera movement: 0 = keep, 1 = off while jumping and landing, 2 = always off
 		float punchScale{ 1.0f };
 
 		// negative = use the mode's default
@@ -275,6 +276,8 @@ namespace
 						g_cfg.smoothing = std::clamp(std::stoi(val), 0, 2);
 					} else if (key == "iViewBob") {
 						g_cfg.viewBob = std::clamp(std::stoi(val), 0, 2);
+					} else if (key == "iFalloutCameraMotion") {
+						g_cfg.falloutCamera = std::clamp(std::stoi(val), 0, 2);
 					} else if (key == "iViewRoll") {
 						g_cfg.viewRoll = std::clamp(std::stoi(val), 0, 2);
 					}
@@ -491,6 +494,7 @@ namespace
 			c.hlPowerArmorSpeedMult = 1.0f;
 			c.thirdPersonSteps = 0;
 			c.slopeAngle = 45.57f;  // floor normal z 0.7, as in both games
+			c.falloutCamera = 2;    // no camera movement that isn't Half-Life's
 			c.viewBob = 1;
 			c.viewRoll = 1;
 		} else {

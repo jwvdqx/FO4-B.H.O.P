@@ -24,7 +24,37 @@ namespace
 			float bob{ 0.0f };    // HL units
 			float roll{ 0.0f };   // degrees
 			float punch{ 0.0f };  // degrees
+			float airHold{ 0.0f };  // seconds left of "jumping or just landed"
 		} g_state;
+
+		// Fallout's own camera movement in first person comes from its animations: the dip and shake when you
+		// jump and land, the sprint sway. Half-Life has none of it, and it fights the landing tilt. It's one
+		// game setting (bApplyCameraNodeAnimations), switched off while wanted and put back afterwards.
+		RE::Setting* g_camAnim{ nullptr };
+		bool         g_camAnimSearched{ false };
+		bool         g_camAnimOrig{ true };
+		bool         g_camAnimOff{ false };
+
+		void FalloutCameraMotion(bool a_off)
+		{
+			if (!g_camAnimSearched) {
+				g_camAnimSearched = true;
+				if (auto ini = RE::INISettingCollection::GetSingleton()) {
+					g_camAnim = ini->GetSetting("bApplyCameraNodeAnimations:Camera");
+				}
+				if (g_camAnim) {
+					g_camAnimOrig = g_camAnim->GetBinary();
+					REX::INFO("Fallout's camera animation setting found (it was {})", g_camAnimOrig ? "on" : "off");
+				} else {
+					REX::WARN("Fallout's camera animation setting not found; its jump and landing shake stays");
+				}
+			}
+			if (!g_camAnim || a_off == g_camAnimOff) {
+				return;
+			}
+			g_camAnimOff = a_off;
+			g_camAnim->SetBinary(a_off ? false : g_camAnimOrig);
+		}
 
 		using GetRot_t = void (*)(const void*, RE::NiQuaternion&);
 		using GetTrans_t = void (*)(const void*, RE::NiPoint3&);
@@ -72,6 +102,9 @@ namespace
 			const float vy = g_velY.load();
 			const float speed = std::hypot(vx, vy);
 
+			// jumping, in the air, and the moment after landing (Fallout's landing animation)
+			g_state.airHold = g_onGround.load() ? std::max(0.0f, g_state.airHold - dt) : 0.6f;
+
 			// V_CalcBob: cl_bob 0.01, cl_bobcycle 0.8, cl_bobup 0.5
 			g_state.bobTime += dt;
 			if (BobOn() && g_onGround.load()) {
@@ -117,9 +150,11 @@ namespace
 				REX::INFO("thread check: camera on thread {}", REX::W32::GetCurrentThreadId());
 			}
 			if (!Active(a_this)) {
+				FalloutCameraMotion(false);  // menus, mod off: Fallout's own setting back
 				return;
 			}
 			Step();
+			FalloutCameraMotion(g_cfg.falloutCamera == 2 || (g_cfg.falloutCamera == 1 && g_state.airHold > 0.0f));
 			a_out.z += g_state.bob * g_cfg.bobScale * kHLToGame;
 		}
 

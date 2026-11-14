@@ -82,6 +82,9 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 ## Camera (first person)
 
 - Half-Life 1 view bob, strafe roll and landing tilt. "Like the game" = on in HL1 mode, off in HL2 mode.
+  **Fallout's camera shake**: Fallout's own first person camera movement (the dip and shake when you jump and
+  land, which comes from its animations) is switched off while jumping and landing, or always. Fallout's
+  own setting is put back when the mod is off.
   The bob is Half-Life's real size (before v1.4 it was a third of it; lower **Bob strength** if you liked that).
 
 ## Sounds

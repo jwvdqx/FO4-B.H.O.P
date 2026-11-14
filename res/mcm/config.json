@@ -783,6 +783,20 @@
             "step": 0.1,
             "sourceType": "ModSettingFloat"
           }
+        },
+        {
+          "id": "iFalloutCameraMotion:Camera",
+          "text": "Fallout's camera shake",
+          "type": "dropdown",
+          "help": "Fallout moves the first person camera with its animations: the dip and shake when you jump and land, the sprint sway. Off for jumps: removed while jumping and landing, so only Half-Life's landing tilt is left. Always off: no Fallout camera movement at all (also melee and other animations).",
+          "valueOptions": {
+            "options": [
+              "Keep",
+              "Off for jumps",
+              "Always off"
+            ],
+            "sourceType": "ModSettingInt"
+          }
         }
       ]
     },
