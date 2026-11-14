@@ -405,7 +405,7 @@ int main()
 		Near(hlcore::SlopeClimbVz(v, 0.0f, -0.8f, 0.0f, 0.6f, 0.7f), 0.0, 0.001, "slope: too steep to walk on is left to the game");
 	}
 
-	// ---- ledge jump: the takeoff speed we give reaches Fallout's own jump height under Fallout's gravity
+	// ---- jump speed: the takeoff speed for a height really reaches that height
 	{
 		const float g = 13.24f, h = 43.0f * 0.0254f;  // Fallout's gravity (m/s2), its jump height (43 HL units in metres)
 		float       vz = hlcore::JumpSpeed(g, h), z = 0.0f, peak = 0.0f;
@@ -413,7 +413,7 @@ int main()
 			z += hlcore::GravityStep(vz, g, 0.001f) * 0.001f;
 			peak = std::max(peak, z);
 		}
-		Near(peak, h, 0.002, "ledge jump: takeoff speed reaches Fallout's jump height");
+		Near(peak, h, 0.002, "jump speed: takeoff speed reaches the height asked for");
 		// Half-Life numbers used by the Full Half-Life profiles: 45 units at 800, 21 at 600
 		Near(hlcore::JumpSpeed(800.0f, 45.0f), 268.33, 0.01, "HL1 jump: 268.3 units/s takeoff");
 		Near(hlcore::JumpSpeed(600.0f, 21.0f), 158.75, 0.01, "HL2 jump: 158.7 units/s takeoff");
