@@ -21,7 +21,20 @@ save or close the Pause menu.
 | deathclaw (.308) | ~19% | 1–6 |
 | deathclaw (fusion core / mini nuke) | ~60–70% | 0–1 |
 
-Melee/unarmed kills give nothing. Grenade/mine kills pay ammo for the gun in your hands.
+Only the **killing hit** counts: ammo is paid only if the gun in your hands landed it
+(grenades, mines, melee give no gun ammo).
+
+**Scrounger** (vanilla perk, ranks 1–4): −10% "nothing" chance and +25% rounds per rank
+(raider at rank 4: ~34% nothing, up to 6 rounds).
+
+## Grenades (needs Demolition Expert rank 4)
+- Enemies that carry grenades can give you **0–3 of one they carry**, by toughness
+  (raider 0–1, gunner 0–2, overlord-tier 0–3).
+- Only if your grenades did **≥ 20% of its max health in total**, or a grenade landed the kill.
+- **Grenade kills: 30% chance its own grenades go off** — they're removed, you get none, and the
+  nuke mine explosion goes off on the body. Stay back.
+- Excluded from every pool: explosives of 400+ damage (nuke mines, Nuka grenades, mini nukes,
+  and similar mod explosives).
 
 ## Requirements
 Fallout 4 1.11.240, F4SE 0.7.9, Address Library for F4SE Plugins.
