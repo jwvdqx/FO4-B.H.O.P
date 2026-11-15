@@ -1,0 +1,71 @@
+name: Build Contextual Ammo
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["ammo-v*"]
+    paths:
+      - "mods/ContextualAmmo/**"
+      - ".github/workflows/contextual-ammo.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: pwsh
+    working-directory: mods/ContextualAmmo
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CommonLibF4 (Fallout 4 1.11.240)
+        run: |
+          git clone --recurse-submodules https://github.com/libxse/commonlibf4 lib/commonlibf4
+          cd lib/commonlibf4
+          git checkout 7c8c6f8a349ac85abf6fc8a7e5a71732d9339954
+          git submodule update --init --recursive
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Formula tests
+        run: |
+          xmake f -P . -m releasedbg -y
+          xmake build -P . -y ammo_tests
+          xmake run -P . ammo_tests
+
+      - name: Build
+        env:
+          XSE_FO4_MODS_PATH: ${{ github.workspace }}\mods\ContextualAmmo\dist
+        run: |
+          xmake build -P . -y ContextualAmmo
+          xmake install -P . -y ContextualAmmo
+
+      - name: Package (Data folder layout)
+        run: |
+          $root = Get-ChildItem dist -Directory | Select-Object -First 1
+          Get-ChildItem -Recurse $root.FullName | Select-Object FullName
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path (Join-Path $root.FullName '*') -DestinationPath "out/ContextualAmmo.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ContextualAmmo
+          path: mods/ContextualAmmo/out/ContextualAmmo.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/ammo-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Contextual Ammo ${{ github.ref_name }}
+          files: mods/ContextualAmmo/out/ContextualAmmo.zip
+          body: |
+            Kills with a gun refund ammo of the gun's current caliber, scaled by how tough the victim was.
+            Requires F4SE 0.7.9 (Fallout 4 1.11.240) and Address Library for F4SE Plugins.
+            Switch: Data\F4SE\Plugins\ContextualAmmo.ini -> Enabled=1/0
