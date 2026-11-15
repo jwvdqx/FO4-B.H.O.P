@@ -452,12 +452,20 @@ namespace
 					g_hasLast = true;
 				}
 			}
-			if (a_event && a_event->QPressed() && a_event->QHeldDownSecs() > 0.0f && NowMs() < g_autoJumpUntil.load()) {
-				g_autoJumpUntil = 0;
+			if (a_event && a_event->QPressed() && a_event->QHeldDownSecs() > 0.0f && NowMs() < g_autoJumpUntil.load() &&
+				Camera::g_onGround.load()) {
+				// Fallout may not take the press on the very frame you land, so it's offered again each frame
+				// while you're still on the ground, until the movement code sees the jump (or 150 ms pass).
+				// In Power Armor only once: a fresh press there can also mean the jetpack.
+				if (g_inPowerArmor.load()) {
+					g_autoJumpUntil = 0;
+				}
 				alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
 				std::memcpy(buf, a_event, sizeof(RE::ButtonEvent));
 				reinterpret_cast<RE::ButtonEvent*>(buf)->heldDownSecs = 0.0f;  // looks like a fresh press
-				g_jumpWantedMs = NowMs();
+				if (g_jumpWantedMs.load() == 0) {
+					g_jumpWantedMs = NowMs();  // offered again each frame: the first offer counts
+				}
 				if (g_cfg.debugLog && g_logs++ < 10) {
 					REX::INFO("auto-jump (held button, device {})", static_cast<int>(a_event->device.get()));
 				}

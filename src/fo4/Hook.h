@@ -75,9 +75,10 @@ namespace
 		// short moments like that still count as ground, so you keep full control and friction.
 		// Jump through Fallout's landing animation: Fallout won't jump again until its landing animation has
 		// played, so a jump asked for right after landing (your press, auto-jump, the jump buffer) can be
-		// refused. If Fallout hasn't jumped 70 ms after the jump was asked for, we jump ourselves, as high as
-		// Fallout's own jump. Not when Fallout has a real reason to refuse: too heavy to jump, jumping turned
-		// off (scenes, scripts), menus, water.
+		// refused. If Fallout still hasn't jumped once the press has been offered to it for 160 ms (it's
+		// offered again every frame on the ground, see AutoJump), we jump ourselves, as high as Fallout's own
+		// jump. Not when Fallout has a real reason to refuse: too heavy to jump, jumping turned off (scenes,
+		// scripts), menus, water.
 		bool forcedJump = false;
 		if (!rawGround) {
 			g_jumpWantedMs = 0;  // a press in the air isn't a jump from the ground (the jump buffer asks again on landing)
@@ -85,7 +86,7 @@ namespace
 				   g_air.sinceLanding < 0.8f && a_vel.z / g_cfg.unitScale < 50.0f) {
 			const long long wanted = g_jumpWantedMs.load();
 			const long long age = wanted != 0 ? NowMs() - wanted : -1;
-			if (age >= 70 && age < 300 && JumpingEnabled()) {
+			if (age >= 160 && age < 400 && JumpingEnabled()) {
 				g_jumpWantedMs = 0;
 				const float h = FalloutJumpHeightHL() * g_cfg.unitScale;
 				const float vz = g_air.jumpTakeoffVz > 0.5f ? g_air.jumpTakeoffVz : std::sqrt(2.0f * std::max(g_air.gravity, 1.0f) * std::max(h, 0.1f));
@@ -97,7 +98,15 @@ namespace
 				}
 			}
 		}
-		bool jumpedNow = forcedJump || (g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f);
+		// A jump: Fallout hands us upward speed just after you leave the ground. It isn't always on the very
+		// step you leave it: a jump fired the moment you land (auto-jump, jump buffer) can show "off the
+		// ground" one step and the upward speed the next. Missing it meant the following landing didn't
+		// count as a landing from a jump, and auto-jump stopped after one hop. (airTime here is still the
+		// time since the ground as of the last step.)
+		bool jumpedNow = forcedJump || (!rawGround && !g_air.jumpedThisAir && g_air.airTime < 0.15f && a_vel.z / g_cfg.unitScale > 50.0f);
+		if (jumpedNow) {
+			g_autoJumpUntil = 0;  // the jump we asked for (if any) happened
+		}
 		// A ledge jump we asked Fallout to do itself (so it plays its jump animation): did it?
 		if (g_air.ledgeTryUntil != 0) {
 			if (rawGround) {
