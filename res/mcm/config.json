@@ -681,6 +681,24 @@
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
+        },
+        {
+          "id": "bJumpThroughLanding:Air",
+          "text": "Jump through the landing animation",
+          "type": "switcher",
+          "help": "Fallout won't jump again until its landing animation has played, so a jump right after landing (your press, auto-jump, the jump buffer) can be refused. On: if Fallout hasn't jumped 70 ms later, B.H.O.P. jumps for it, as high as Fallout's own jump. Not when you're too heavy to jump or jumping is turned off (scenes, scripts).",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bNoLandingAnimation:Air",
+          "text": "No landing animation",
+          "type": "switcher",
+          "help": "Fallout's landing animation, and the first person camera dip it brings, ends the moment you land, so you can move and jump straight away and the view bob isn't fighting it. The debug log says whether Fallout's animation graph accepted it.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
         }
       ]
     },
@@ -1170,6 +1188,27 @@
             "min": 0,
             "max": 1,
             "step": 0.05,
+            "sourceType": "ModSettingFloat"
+          }
+        },
+        {
+          "id": "bEqualizeLoudness:Sounds",
+          "text": "Loudness equalization",
+          "type": "switcher",
+          "help": "Every sound file is measured once when the game loads (its loudest moment) and the louder ones are turned down to match, so all surfaces sound equally loud and the volume sliders control them evenly. Costs nothing while you play. .wav files only (.xwm stay as they are). For one group louder or quieter, add GroupVolume.<group>=0.7 to the settings file.",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fEqualizeMaxCut:Sounds",
+          "text": "Equalization: largest cut (dB)",
+          "type": "slider",
+          "help": "A file is never turned down by more than this. Applies after restarting the game.",
+          "valueOptions": {
+            "min": 3,
+            "max": 30,
+            "step": 1,
             "sourceType": "ModSettingFloat"
           }
         },

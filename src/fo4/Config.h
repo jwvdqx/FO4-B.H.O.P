@@ -91,6 +91,8 @@ namespace
 		int   crouchJumpHeight{ 0 };   // 0 = exact per game (HL1 18, HL2 36 units), 1 = scaled to Fallout's jump
 		float crouchJumpWindow{ 0.15f };  // seconds after the top of the jump it still works
 		bool  crouchLandSneak{ true };  // land sneaking after a crouch-jump (Half-Life keeps you ducked)
+		bool  jumpThroughLanding{ true };  // a jump Fallout refuses during its landing animation: we jump ourselves
+		bool  noLandingAnimation{ false }; // end Fallout's landing animation at once when you land
 		int   crouchJumpKey{ 1 };      // 0 = sneak key only, 1 = sneak key, or jump pressed again on the way up
 		float jumpBuffer{ 0.1f };      // seconds: jump pressed this long before landing still jumps (0 = off)
 		float ledgeJump{ 0.1f };       // seconds after running off a ledge you can still jump (0 = off)
@@ -130,6 +132,9 @@ namespace
 		float runVolume{ 0.5f };
 		float walkVolume{ 0.2f };
 		float sneakVolumeMult{ 1.0f };  // extra; Half-Life already makes ducking steps quieter
+		bool  equalizeLoudness{ true };  // every sound file brought to the same loudness (measured once, at load)
+		float equalizeMaxCut{ 18.0f };   // dB: a file is never turned down by more than this
+		std::vector<std::pair<std::string, float>> groupVolumes;  // GroupVolume.<group>=x: one group louder or quieter
 		float runStepSpeed{ 0.0f };  // HL units/s where steps switch to running; 0 = automatic (scaled from Half-Life)
 		float minStepSpeed{ 10.0f };
 		float runInterval{ 0.3f };
@@ -243,6 +248,8 @@ namespace
 						g_cfg.fileSoundFlags = static_cast<std::uint32_t>(std::stoul(val, nullptr, 0));
 					} else if (key == "iFilePriority") {
 						g_cfg.filePriority = static_cast<std::uint32_t>(std::stoul(val, nullptr, 0));
+					} else if (key.rfind("GroupVolume.", 0) == 0) {
+						g_cfg.groupVolumes.emplace_back(Lower(key.substr(12)), std::clamp(std::stof(val), 0.0f, 1.0f));
 					} else if (key.rfind("Material.", 0) == 0) {
 						g_cfg.materialOverrides.emplace_back(Lower(key.substr(9)), Lower(val));
 					}
@@ -304,6 +311,10 @@ namespace
 					B("bPushes", g_cfg.pushes);
 					B("bCrouchJump", g_cfg.crouchJump);
 					B("bCrouchLandSneak", g_cfg.crouchLandSneak);
+					B("bJumpThroughLanding", g_cfg.jumpThroughLanding);
+					B("bNoLandingAnimation", g_cfg.noLandingAnimation);
+					B("bEqualizeLoudness", g_cfg.equalizeLoudness);
+					F("fEqualizeMaxCut", g_cfg.equalizeMaxCut);
 					F("fCrouchJumpWindow", g_cfg.crouchJumpWindow);
 					F("fEdgeFrictionMult", g_cfg.edgeFrictionMult);
 					F("fJumpBuffer", g_cfg.jumpBuffer);
@@ -461,6 +472,9 @@ namespace
 		c.fileSoundFlags = g_cfg.fileSoundFlags;
 		c.filePriority = g_cfg.filePriority;
 		c.materialOverrides = g_cfg.materialOverrides;
+		c.equalizeLoudness = g_cfg.equalizeLoudness;
+		c.equalizeMaxCut = g_cfg.equalizeMaxCut;
+		c.groupVolumes = g_cfg.groupVolumes;
 		c.unitScale = g_cfg.unitScale;
 		c.perkMessages = g_cfg.perkMessages;
 		c.enableInPowerArmor = g_cfg.enableInPowerArmor;

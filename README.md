@@ -62,6 +62,12 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
   Fallout's own jump, so its jump animation plays; press too late and there is no jump. The debug log says
   whether Fallout took it.
 
+- **Jump through the landing animation** (on by default): Fallout won't jump again until its landing
+  animation has played, so a jump right after landing could be refused. If Fallout hasn't jumped 70 ms after
+  you asked (press, auto-jump, jump buffer), B.H.O.P. jumps for it, as high as Fallout's own jump. Not when
+  you're too heavy to jump or jumping is turned off.
+- **No landing animation** (optional): Fallout's landing animation, and its first person camera dip, ends
+  the moment you land. The debug log says whether Fallout's animation graph accepted it.
 - Crouch-jump: press sneak in the air (while rising or just after the top) to lift your feet like Half-Life's
   duck-jump: HL1 +18 units, HL2 +36 units, or scaled to Fallout's own jump. You land sneaking, like HL keeps
   you ducked. Fallout can't shrink your body mid-air, so this is an upward boost giving the same extra height;
@@ -93,6 +99,9 @@ Everything is set in-game: Pause menu -> Mod Config -> **B.H.O.P.** Changes appl
 
 - Half-Life 1/2 footsteps, jump and landing sounds by surface, timed like Half-Life; vanilla player footsteps
   muted (NPCs untouched). Same reverb as vanilla footsteps (works with reverb mods). Sounds follow you.
+- **Loudness equalization** (on by default): every sound file is measured once at load (its loudest
+  moment) and the louder ones are turned down to match, so all surfaces sound equally loud and the volume
+  sliders control them evenly. `GroupVolume.<group>=0.7` in the settings file for one group on top.
 - **Water sounds** (Half-Life's rules): getting in and out of water, holding jump in water (once a second),
   HL1 underwater bubbles (more often as your air runs out), gasping for air after a long dive, and drowning
   sounds when Fallout's drowning hurts you. HL2 sprint sound and HL2 fall pain too.

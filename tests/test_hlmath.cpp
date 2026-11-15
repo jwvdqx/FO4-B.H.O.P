@@ -3,6 +3,10 @@
 
 #include "../src/core/HLMath.h"
 #include "../src/core/MoveCore.h"
+#include "../src/core/Loudness.h"
+
+#include <cstring>
+#include <vector>
 
 #include <cstdio>
 #include <cstdlib>
@@ -419,6 +423,52 @@ int main()
 		Near(hlcore::JumpSpeed(600.0f, 21.0f), 158.75, 0.01, "HL2 jump: 158.7 units/s takeoff");
 		// slope limit: 45.57 degrees is Half-Life's floor normal z 0.7
 		Near(std::cos(45.57 * 0.01745329), 0.7, 0.0005, "slope limit: 45.57 degrees = normal z 0.7");
+	}
+
+	// --- footstep loudness: WAV reading, loudest-moment level, equalization gains
+	{
+		// a 16-bit mono WAV in memory: 0.1 s of silence, then 50 ms of a tone at amplitude a_amp
+		auto makeWav = [](float a_amp, int a_bits) {
+			const int rate = 22050;
+			std::vector<float> s(rate / 10, 0.0f);
+			for (int i = 0; i < rate / 20; ++i) {
+				s.push_back(a_amp * static_cast<float>(std::sin(2.0 * 3.14159265 * 440.0 * i / rate)));
+			}
+			const int bytes = a_bits / 8;
+			std::vector<std::uint8_t> w(44 + s.size() * bytes);
+			auto put32 = [&](int at, std::uint32_t v) { for (int k = 0; k < 4; ++k) w[at + k] = static_cast<std::uint8_t>(v >> (8 * k)); };
+			auto put16 = [&](int at, std::uint16_t v) { w[at] = static_cast<std::uint8_t>(v); w[at + 1] = static_cast<std::uint8_t>(v >> 8); };
+			std::memcpy(&w[0], "RIFF", 4); put32(4, static_cast<std::uint32_t>(w.size() - 8)); std::memcpy(&w[8], "WAVE", 4);
+			std::memcpy(&w[12], "fmt ", 4); put32(16, 16); put16(20, 1); put16(22, 1); put32(24, rate); put32(28, rate * bytes); put16(32, static_cast<std::uint16_t>(bytes)); put16(34, static_cast<std::uint16_t>(a_bits));
+			std::memcpy(&w[36], "data", 4); put32(40, static_cast<std::uint32_t>(s.size() * bytes));
+			for (std::size_t i = 0; i < s.size(); ++i) {
+				if (a_bits == 16) {
+					put16(44 + static_cast<int>(i) * 2, static_cast<std::uint16_t>(static_cast<std::int16_t>(s[i] * 32767.0f)));
+				} else {
+					w[44 + i] = static_cast<std::uint8_t>(128 + static_cast<int>(s[i] * 127.0f));
+				}
+			}
+			return w;
+		};
+		const auto loud = makeWav(0.8f, 16);
+		const auto quiet = makeWav(0.2f, 16);
+		const auto w8 = makeWav(0.8f, 8);
+		const auto wl = loudness::ParseWav(loud.data(), loud.size());
+		const auto wq = loudness::ParseWav(quiet.data(), quiet.size());
+		const auto w8p = loudness::ParseWav(w8.data(), w8.size());
+		Check(wl.has_value() && wq.has_value() && w8p.has_value(), "loudness: WAV files read (16 and 8 bit)", 1, 1);
+		const float dl = loudness::PeakWindowDb(*wl), dq = loudness::PeakWindowDb(*wq), d8 = loudness::PeakWindowDb(*w8p);
+		// a sine at amplitude a has RMS a/sqrt(2): 0.8 -> -4.9 dB, 0.2 -> -17.0 dB
+		Near(dl, -4.95, 0.3, "loudness: loud file measured at its loudest moment (silence ignored)");
+		Near(dl - dq, 12.04, 0.2, "loudness: 4x the amplitude is 12 dB louder");
+		Near(d8, dl, 0.3, "loudness: 8-bit file reads like the 16-bit one");
+		const std::uint8_t junk[16] = { 'n', 'o', 't', ' ', 'a', ' ', 'w', 'a', 'v' };
+		Check(!loudness::ParseWav(junk, sizeof(junk)).has_value(), "loudness: not a WAV: nothing", 0, 0);
+		const float target = loudness::TargetDb({ dl, dq, dl, dl, dl });
+		Near(target, dq, 1e-4, "loudness: target is a low percentile (the quieter files)");
+		Near(loudness::Gain(dl, target) * std::pow(10.0f, dl / 20.0f), std::pow(10.0f, dq / 20.0f), 1e-3, "loudness: the loud file is turned down to match");
+		Near(loudness::Gain(dq, target), 1.0, 1e-6, "loudness: the quiet file stays as it is");
+		Near(loudness::Gain(0.0f, -40.0f, 18.0f), std::pow(10.0f, -18.0f / 20.0f), 1e-5, "loudness: never cut by more than the limit");
 	}
 
 	std::printf("\n%d failure(s)\n", g_failures);

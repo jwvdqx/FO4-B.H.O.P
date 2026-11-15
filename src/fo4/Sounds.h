@@ -15,6 +15,8 @@ namespace
 		struct Group
 		{
 			std::vector<std::string> files;  // game paths, sorted by number
+			std::vector<float>       levels; // loudest-moment level of each file (dB), -120 = couldn't measure
+			std::vector<float>       gains;  // equalization: volume factor for each file (1 = as it is)
 		};
 
 		std::unordered_map<std::string, Group>        g_groups[3];      // [set][group]
@@ -185,12 +187,40 @@ namespace
 					}
 					found[group][num] = gamePath;
 				}
+				std::vector<float> all;
+				int                measured = 0;
 				for (auto& [name, files] : found) {
 					auto& g = g_groups[set][name];
 					for (auto& [n, p] : files) {
 						g.files.push_back(p);
+						// how loud it is (WAV only; .xwm is compressed and stays as it is)
+						float level = -120.0f;
+						const fs::path file = dir / fs::path(p).filename();
+						if (Lower(file.extension().string()) == ".wav") {
+							std::ifstream in(file, std::ios::binary);
+							std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+							if (auto wav = loudness::ParseWav(bytes.data(), bytes.size())) {
+								level = loudness::PeakWindowDb(*wav);
+								++measured;
+							}
+						}
+						g.levels.push_back(level);
+						all.push_back(level);
 					}
 				}
+				// equalization: every file brought to the same loudness (the quieter files' level)
+				const float target = loudness::TargetDb(all);
+				for (auto& [name, g] : g_groups[set]) {
+					g.gains.clear();
+					for (std::size_t i = 0; i < g.files.size(); ++i) {
+						g.gains.push_back(loudness::Gain(g.levels[i], target, g_cfg.equalizeMaxCut));
+						if (g_cfg.debugLog && g.levels[i] > -100.0f) {
+							REX::INFO("loudness {}: {:.1f} dB -> x{:.2f}", g.files[i], g.levels[i], g.gains[i]);
+						}
+					}
+				}
+				REX::INFO("{}: loudness measured for {} files, all brought to {:.1f} dB ({})", kFolders[set], measured, target,
+					g_cfg.equalizeLoudness ? "on" : "off in the settings");
 				REX::INFO("{}: {} sound groups found", kFolders[set], g_groups[set].size());
 				if (g_groups[set].find(set == 1 ? "pl_step" : "concrete") == g_groups[set].end()) {
 					REX::WARN("{}: basic footstep files are missing; vanilla footsteps will NOT be muted for this set", kFolders[set]);
@@ -322,7 +352,16 @@ namespace
 			if (auto root = player->Get3D()) {
 				handle.SetObjectToFollow(root);  // stays with you while you run, instead of being left behind
 			}
-			const float vol = std::clamp(a_req.volume * g_cfg.volume, 0.001f, 1.0f);
+			float vol = a_req.volume * g_cfg.volume;
+			if (g_cfg.equalizeLoudness && idx < it->second.gains.size()) {
+				vol *= it->second.gains[idx];  // every file as loud as the others
+			}
+			for (const auto& [group, v] : g_cfg.groupVolumes) {
+				if (group == it->first) {
+					vol *= v;  // GroupVolume.<group>
+				}
+			}
+			vol = std::clamp(vol, 0.001f, 1.0f);
 			const auto  att = static_cast<std::uint16_t>(std::clamp(-2000.0f * std::log10(vol), 0.0f, 10000.0f));  // 1/100 dB
 			handle.SetStaticAttenuation(att);
 			handle.Play();
