@@ -72,7 +72,15 @@ namespace
 
 		// Stairs and bumps make the game report "in the air" for a moment. Unless you jumped,
 		// short moments like that still count as ground, so you keep full control and friction.
-		bool jumpedNow = g_air.prevRawGround && !rawGround && a_vel.z / g_cfg.unitScale > 50.0f;
+		// A jump: Fallout hands us upward speed just after you leave the ground. It isn't always on the very
+		// step you leave it: a jump fired the moment you land (auto-jump, jump buffer) can show "off the
+		// ground" one step and the upward speed the next. Missing it meant the following landing didn't
+		// count as a landing from a jump, and auto-jump stopped after one hop. (airTime here is still the
+		// time since the ground as of the last step.)
+		bool jumpedNow = !rawGround && !g_air.jumpedThisAir && g_air.airTime < 0.15f && a_vel.z / g_cfg.unitScale > 50.0f;
+		if (jumpedNow) {
+			g_autoJumpUntil = 0;  // the jump we asked for (if any) happened
+		}
 		// A ledge jump we asked Fallout to do itself (so it plays its jump animation): did it?
 		if (g_air.ledgeTryUntil != 0) {
 			if (rawGround) {
@@ -348,7 +356,7 @@ namespace
 			const float r = a_this->radius * 69.99125f;  // your body's radius, Havok -> game units
 			WallProbe::g_radiusGame = std::isfinite(r) && r > 5.0f && r < 80.0f ? r : 22.0f;
 		}
-		// Self-check of the measurement: walking straight on flat ground, you should move exactly as fast as
+		// Self-check of the measurement: walking straight on flat ground, you should move exactly as
 		// we asked. If the game's step timing ever made the measurement read high or low, this learns the
 		// factor and corrects it, so it can't turn into fake pushes (runaway speed) or fake walls.
 		if (g_stats.measured) {
