@@ -36,16 +36,16 @@ jobs:
 
       - name: Formula tests
         run: |
-          xmake f -m releasedbg -y
-          xmake build -y ammo_tests
-          xmake run ammo_tests
+          xmake f -P . -m releasedbg -y
+          xmake build -P . -y ammo_tests
+          xmake run -P . ammo_tests
 
       - name: Build
         env:
           XSE_FO4_MODS_PATH: ${{ github.workspace }}\mods\ContextualAmmo\dist
         run: |
-          xmake build -y ContextualAmmo
-          xmake install -y ContextualAmmo
+          xmake build -P . -y ContextualAmmo
+          xmake install -P . -y ContextualAmmo
 
       - name: Package (Data folder layout)
         run: |
