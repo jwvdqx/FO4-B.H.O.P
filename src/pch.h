@@ -3,6 +3,7 @@
 #include <RE/Fallout.h>
 #include "core/HLMath.h"
 #include "core/MoveCore.h"
+#include "core/Loudness.h"
 #include <F4SE/F4SE.h>
 #include <REX/W32/OLE32.h>
 #include <REX/W32/SHELL32.h>
@@ -17,6 +18,7 @@
 #include <random>
 #include <unordered_map>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <vector>

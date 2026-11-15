@@ -353,6 +353,48 @@ namespace
 	std::atomic<long long> g_autoJumpUntil{ 0 };  // a jump is wanted right after landing, until this time (ms)
 	std::atomic<long long> g_jumpHeldMs{ 0 };     // last time the jump button was seen down (ms)
 	std::atomic<long long> g_jumpPressedMs{ 0 };  // a fresh press of jump nothing has used yet (ms), 0 = none
+	std::atomic<long long> g_jumpWantedMs{ 0 };   // a jump was asked of Fallout at this time (press or auto-jump), 0 = none
+
+	// Is jumping allowed right now (not turned off by a scene, a script or the game)?
+	bool JumpingEnabled()
+	{
+		auto mgr = RE::BSInputEnableManager::GetSingleton();
+		return !mgr || mgr->cachedInputUserEventsFlags.all(RE::UserEvents::USER_EVENT_FLAG::kJumping);
+	}
+
+	// No landing animation (optional): when you land, Fallout's animation graph is told the landing is over,
+	// so its landing animation (and the camera dip it brings in first person) ends at once and you can move
+	// and jump straight away. The graph's event for that isn't documented, so the likely names are tried
+	// and the one the graph takes is remembered (the log says which, or that none worked).
+	namespace LandingAnim
+	{
+		int  g_found{ -1 };  // index into kNames, -1 = not found yet, -2 = none works
+		int  g_tries{ 0 };
+		constexpr const char* kNames[] = { "JumpLandEnd", "jumpLandEnd", "LandEnd", "landEnd", "JumpLandFinish", "JumpEnd" };
+
+		void Cut()
+		{
+			auto player = RE::PlayerCharacter::GetSingleton();
+			if (!player || g_found == -2) {
+				return;
+			}
+			if (g_found >= 0) {
+				static_cast<void>(player->NotifyAnimationGraphImpl(RE::BSFixedString(kNames[g_found])));
+				return;
+			}
+			for (int i = 0; i < static_cast<int>(std::size(kNames)); ++i) {
+				if (player->NotifyAnimationGraphImpl(RE::BSFixedString(kNames[i]))) {
+					g_found = i;
+					REX::INFO("no landing animation: Fallout's graph takes '{}'", kNames[i]);
+					return;
+				}
+			}
+			if (++g_tries >= 5) {
+				g_found = -2;
+				REX::WARN("no landing animation: Fallout's animation graph took none of the landing events; landing animations stay");
+			}
+		}
+	}
 	std::atomic_bool       g_jumpDown{ false };   // jump button is down (press seen, no release yet)
 	std::atomic_bool       g_jumpHeldSeen{ false };  // this press has sent "still held" events
 
@@ -395,6 +437,7 @@ namespace
 				g_jumpDown = pressed;
 				if (fresh) {
 					g_jumpPressedMs = now;  // the movement code may use it: ledge jump, crouch-jump, jump buffer
+					g_jumpWantedMs = now;   // and: did Fallout jump? (jump through the landing animation)
 					g_jumpHeldSeen = false;
 					if (g_cfg.debugLog && g_deviceLogs < 6) {
 						++g_deviceLogs;
@@ -420,6 +463,9 @@ namespace
 				alignas(16) std::byte buf[sizeof(RE::ButtonEvent)];
 				std::memcpy(buf, a_event, sizeof(RE::ButtonEvent));
 				reinterpret_cast<RE::ButtonEvent*>(buf)->heldDownSecs = 0.0f;  // looks like a fresh press
+				if (g_jumpWantedMs.load() == 0) {
+					g_jumpWantedMs = NowMs();  // offered again each frame: the first offer counts
+				}
 				if (g_cfg.debugLog && g_logs++ < 10) {
 					REX::INFO("auto-jump (held button, device {})", static_cast<int>(a_event->device.get()));
 				}
@@ -446,6 +492,7 @@ namespace
 			ev->heldDownSecs = 0.0f;
 			ev->value = 1.0f;
 			ev->next = nullptr;
+			g_jumpWantedMs = now;
 			if (g_cfg.debugLog && g_logs++ < 10) {
 				REX::INFO("auto-jump (replayed press, device {})", static_cast<int>(ev->device.get()));
 			}

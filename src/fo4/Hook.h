@@ -4,10 +4,10 @@
 
 namespace
 {
-	void HookedSetLinearVelocity(RE::bhkCharacterController* a_this, const RE::hkVector4f& a_vel)
+	void HookedSetLinearVelocity(RE::bhkCharacterController* a_this, const RE::hkVector4f& a_velIn)
 	{
 		if (!a_this || a_this != PlayerController()) {
-			return g_origSetVel(a_this, a_vel);
+			return g_origSetVel(a_this, a_velIn);
 		}
 
 		// Thread model: this runs on a physics thread. Settings are only ever replaced on the main thread
@@ -15,10 +15,11 @@ namespace
 		std::unique_lock lock(g_simLock);
 		if (g_cfg.mode == Mode::kVanilla && SoundSet() == 0) {
 			lock.unlock();
-			return g_origSetVel(a_this, a_vel);
+			return g_origSetVel(a_this, a_velIn);
 		}
 
 		RequestCacheUpdate();
+		RE::hkVector4f a_vel = a_velIn;  // ours to change (jump through the landing animation)
 
 		const auto now = std::chrono::steady_clock::now();
 		float      dt = 0.0f;
@@ -72,12 +73,37 @@ namespace
 
 		// Stairs and bumps make the game report "in the air" for a moment. Unless you jumped,
 		// short moments like that still count as ground, so you keep full control and friction.
+		// Jump through Fallout's landing animation: Fallout won't jump again until its landing animation has
+		// played, so a jump asked for right after landing (your press, auto-jump, the jump buffer) can be
+		// refused. If Fallout still hasn't jumped once the press has been offered to it for 160 ms (it's
+		// offered again every frame on the ground, see AutoJump), we jump ourselves, as high as Fallout's own
+		// jump. Not when Fallout has a real reason to refuse: too heavy to jump, jumping turned off (scenes,
+		// scripts), menus, water.
+		bool forcedJump = false;
+		if (!rawGround) {
+			g_jumpWantedMs = 0;  // a press in the air isn't a jump from the ground (the jump buffer asks again on landing)
+		} else if (g_cfg.jumpThroughLanding && g_cfg.mode != Mode::kVanilla && !menus && !g_swimming.load() && !g_inPowerArmor.load() && g_load.load() <= 1.0f &&
+				   g_air.sinceLanding < 0.8f && a_vel.z / g_cfg.unitScale < 50.0f) {
+			const long long wanted = g_jumpWantedMs.load();
+			const long long age = wanted != 0 ? NowMs() - wanted : -1;
+			if (age >= 160 && age < 400 && JumpingEnabled()) {
+				g_jumpWantedMs = 0;
+				const float h = FalloutJumpHeightHL() * g_cfg.unitScale;
+				const float vz = g_air.jumpTakeoffVz > 0.5f ? g_air.jumpTakeoffVz : std::sqrt(2.0f * std::max(g_air.gravity, 1.0f) * std::max(h, 0.1f));
+				a_vel.z = vz;
+				a_this->context.m_currentState = RE::hknpCharacterState::hknpCharacterStateType::kJumping;
+				forcedJump = true;
+				if (g_cfg.debugLog) {
+					REX::INFO("jump through the landing animation: Fallout didn't jump after {} ms, jumping ourselves ({:.2f} m/s)", age, vz);
+				}
+			}
+		}
 		// A jump: Fallout hands us upward speed just after you leave the ground. It isn't always on the very
 		// step you leave it: a jump fired the moment you land (auto-jump, jump buffer) can show "off the
 		// ground" one step and the upward speed the next. Missing it meant the following landing didn't
 		// count as a landing from a jump, and auto-jump stopped after one hop. (airTime here is still the
 		// time since the ground as of the last step.)
-		bool jumpedNow = !rawGround && !g_air.jumpedThisAir && g_air.airTime < 0.15f && a_vel.z / g_cfg.unitScale > 50.0f;
+		bool jumpedNow = forcedJump || (!rawGround && !g_air.jumpedThisAir && g_air.airTime < 0.15f && a_vel.z / g_cfg.unitScale > 50.0f);
 		if (jumpedNow) {
 			g_autoJumpUntil = 0;  // the jump we asked for (if any) happened
 		}
@@ -109,6 +135,7 @@ namespace
 		}
 		if (jumpedNow) {
 			g_jumpPressedMs = 0;  // that press became this jump
+			g_jumpWantedMs = 0;
 		}
 		// Ledge jump: Fallout only jumps while it says you're on the ground. Pressing jump just after running
 		// off an edge (or in one of those short "in the air" moments on stairs) still jumps.
@@ -222,6 +249,11 @@ namespace
 			// to check fall damage with Half-Life gravity: Fallout works it out from these two
 			REX::INFO("landing: fall speed {:.0f} HL u/s | Fallout's fall start height {:.2f}, fall time {:.2f} s", fallSpeed,
 				a_this->fallStartHeight, a_this->fallTime);
+		}
+		if (landEvent && !menus && g_cfg.noLandingAnimation && g_cfg.mode != Mode::kVanilla) {
+			if (auto task = F4SE::GetTaskInterface()) {
+				task->AddTask([]() { LandingAnim::Cut(); });  // Fallout's landing animation ended at once
+			}
 		}
 		if (landEvent && !menus) {
 			Camera::OnLand(fallSpeed);
@@ -356,7 +388,7 @@ namespace
 			const float r = a_this->radius * 69.99125f;  // your body's radius, Havok -> game units
 			WallProbe::g_radiusGame = std::isfinite(r) && r > 5.0f && r < 80.0f ? r : 22.0f;
 		}
-		// Self-check of the measurement: walking straight on flat ground, you should move exactly as
+		// Self-check of the measurement: walking straight on flat ground, you should move exactly as fast as
 		// we asked. If the game's step timing ever made the measurement read high or low, this learns the
 		// factor and corrects it, so it can't turn into fake pushes (runaway speed) or fake walls.
 		if (g_stats.measured) {
