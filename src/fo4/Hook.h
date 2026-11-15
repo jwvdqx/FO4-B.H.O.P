@@ -82,7 +82,7 @@ namespace
 		bool forcedJump = false;
 		if (!rawGround) {
 			g_jumpWantedMs = 0;  // a press in the air isn't a jump from the ground (the jump buffer asks again on landing)
-		} else if (g_cfg.jumpThroughLanding && g_cfg.mode != Mode::kVanilla && !menus && !g_swimming.load() && g_load.load() <= 1.0f &&
+		} else if (g_cfg.jumpThroughLanding && g_cfg.mode != Mode::kVanilla && !menus && !g_swimming.load() && !g_inPowerArmor.load() && g_load.load() <= 1.0f &&
 				   g_air.sinceLanding < 0.8f && a_vel.z / g_cfg.unitScale < 50.0f) {
 			const long long wanted = g_jumpWantedMs.load();
 			const long long age = wanted != 0 ? NowMs() - wanted : -1;
