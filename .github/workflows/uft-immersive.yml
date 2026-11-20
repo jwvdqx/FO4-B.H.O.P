@@ -1,0 +1,70 @@
+name: Build UFT Immersive Mode
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["uft-v*"]
+    paths:
+      - "mods/UnlimitedFastTravel/**"
+      - ".github/workflows/uft-immersive.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: pwsh
+    working-directory: mods/UnlimitedFastTravel
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CommonLibF4 (Fallout 4 1.11.240)
+        run: |
+          git clone --recurse-submodules https://github.com/libxse/commonlibf4 lib/commonlibf4
+          cd lib/commonlibf4
+          git checkout 7c8c6f8a349ac85abf6fc8a7e5a71732d9339954
+          git submodule update --init --recursive
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Night rule tests
+        run: |
+          xmake f -P . -m releasedbg -y
+          xmake build -P . -y uft_tests
+          xmake run -P . uft_tests
+
+      - name: Build
+        env:
+          XSE_FO4_MODS_PATH: ${{ github.workspace }}\mods\UnlimitedFastTravel\dist
+        run: |
+          xmake build -P . -y UnlimitedFastTravelImmersive
+          xmake install -P . -y UnlimitedFastTravelImmersive
+
+      - name: Package (Data folder layout)
+        run: |
+          $root = Get-ChildItem dist -Directory | Select-Object -First 1
+          Get-ChildItem -Recurse $root.FullName | Select-Object FullName
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path (Join-Path $root.FullName '*') -DestinationPath "out/UnlimitedFastTravelImmersive.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UnlimitedFastTravelImmersive
+          path: mods/UnlimitedFastTravel/out/UnlimitedFastTravelImmersive.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/uft-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Unlimited Fast Travel - Immersive Mode ${{ github.ref_name }}
+          files: mods/UnlimitedFastTravel/out/UnlimitedFastTravelImmersive.zip
+          body: |
+            Immersive Mode for Unlimited Fast Travel: no fast travel from the Pip-Boy map at night (hours set in MCM).
+            Requires F4SE 0.7.9 (Fallout 4 1.11.240), Address Library for F4SE Plugins, MCM and Unlimited Fast Travel.

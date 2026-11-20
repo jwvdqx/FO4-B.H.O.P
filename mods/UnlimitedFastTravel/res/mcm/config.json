@@ -1,0 +1,162 @@
+{
+  "minMcmVersion": 1,
+  "modName": "UnlimitedFastTravel",
+  "displayName": "Unlimited Fast Travel",
+  "content": [
+    {
+      "text": "<font size=\"40\"><p align = \"center\">Unlimited Fast Travel</p></font>",
+      "html": true,
+      "type": "text"
+    },
+    {
+      "text": "<font size=\"15\"><p align = \"center\">These settings require restarting game to take effect.</p></font>",
+      "html": true,
+      "type": "text"
+    },
+    {
+      "id": "iConditionA:Settings",
+      "text": "Survival Mode",
+      "type": "switcher",
+      "help": "Enable fast travel in survival mode.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionB:Settings",
+      "text": "Interior",
+      "type": "switcher",
+      "help": "Enable fast travel form interior or independent worldspace.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionC:Settings",
+      "text": "In Combat",
+      "type": "switcher",
+      "help": "Enable fast travel when enemies are nearby.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionD:Settings",
+      "text": "Being Apprehended",
+      "type": "switcher",
+      "help": "Enable fast travel while guards are pursuing you.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionE:Settings",
+      "text": "Taking Health Damage",
+      "type": "switcher",
+      "help": "Enable fast travel while taking health damage.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionF:Settings",
+      "text": "Overencumbered",
+      "type": "switcher",
+      "help": "Enable fast travel when you're carrying too much.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionG:Settings",
+      "text": "In Air",
+      "type": "switcher",
+      "help": "Enable fast travel while jumping or falling.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionH:Settings",
+      "text": "Vertibird Exterior",
+      "type": "switcher",
+      "help": "Enable fast travel when you can only travel to an exterior location on a Vertibird.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionI:Settings",
+      "text": "Console Block",
+      "type": "switcher",
+      "help": "Enable fast travel when fast travel is unavailable from current location.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iConditionJ:Settings",
+      "text": "Script Block",
+      "type": "switcher",
+      "help": "Enable fast travel when fast travel is disabled by Papyrus scripts or console.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "type": "spacer",
+      "numLines": 1
+    },
+    {
+      "type": "section",
+      "text": "Immersive Mode"
+    },
+    {
+      "text": "<p align='center'>Needs Unlimited Fast Travel - Immersive Mode. These settings apply as soon as you close the menu.</p>",
+      "html": true,
+      "type": "text"
+    },
+    {
+      "id": "bImmersiveMode:Immersive",
+      "text": "Immersive Mode",
+      "type": "switcher",
+      "help": "No fast travel from the Pip-Boy map at night (between the two hours below). Trying shows \"It's too dark! Fast Travel unavailable.\" Quest and script trips are never blocked.",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    },
+    {
+      "id": "iNightStart:Immersive",
+      "text": "Night starts at (hour)",
+      "type": "slider",
+      "help": "24-hour clock: 21 = 9 PM. Fast travel is unavailable from this hour on.",
+      "valueOptions": {
+        "min": 0,
+        "max": 23,
+        "step": 1,
+        "sourceType": "ModSettingInt"
+      }
+    },
+    {
+      "id": "iNightEnd:Immersive",
+      "text": "Night ends at (hour)",
+      "type": "slider",
+      "help": "24-hour clock: 6 = 6 AM. Fast travel is available again from this hour on. Same hour as the start = never night.",
+      "valueOptions": {
+        "min": 0,
+        "max": 23,
+        "step": 1,
+        "sourceType": "ModSettingInt"
+      }
+    },
+    {
+      "id": "bSunMessage:Immersive",
+      "text": "Morning message",
+      "type": "switcher",
+      "help": "When the night ends, show \"The sun shines! Fast travel available.\" Both message texts can be changed in Data\\MCM\\Config\\UnlimitedFastTravel\\settings.ini (sTooDarkMessage, sSunMessage).",
+      "valueOptions": {
+        "sourceType": "ModSettingBool"
+      }
+    }
+  ]
+}
