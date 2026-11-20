@@ -14,6 +14,7 @@
 #include <F4SE/F4SE.h>
 
 #include <MinHook.h>
+#undef ERROR  // windows.h (pulled in by MinHook) would break REX::ERROR
 
 #include <atomic>
 #include <chrono>
